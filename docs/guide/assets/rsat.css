@@ -1,0 +1,23 @@
+/* RedSAT code blocks in the guide. */
+
+/* The name of a file that other examples import (```rsat,file=NAME), shown above it. */
+.rsat-file {
+    font-family: var(--mono-font);
+    font-size: 0.8em;
+    opacity: 0.7;
+    padding: 0.4em 0.5em 0;
+    background: var(--quote-bg);
+    border-radius: 4px 4px 0 0;
+}
+
+/* The dark themes' highlight.js style (tomorrow-night) has no colour for types such as `int`:
+   give them the colour it uses for built-ins and literals. */
+.coal .hljs-type,
+.navy .hljs-type {
+    color: #de935f;
+}
+
+/* Programs that are meant to fail (```rsat,error): their output shows the error. */
+pre > code.language-rsat.error {
+    border-left: 4px solid #d9534f;
+}

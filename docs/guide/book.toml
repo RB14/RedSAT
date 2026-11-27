@@ -1,0 +1,15 @@
+[book]
+title = "The RedSAT Guide"
+description = "A guide and reference for RedSAT, a programming language whose programs are solved, not executed."
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+# highlight.js does not know RedSAT: this registers the language (see the file for details).
+additional-js = ["assets/rsat-highlight.js"]
+additional-css = ["assets/rsat.css"]
+
+[output.html.search]
+enable = true

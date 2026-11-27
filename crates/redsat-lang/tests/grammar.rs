@@ -1,7 +1,8 @@
-//! The VS Code grammar and the compiler must agree on the language's vocabulary.
+//! The editor grammars and the compiler must agree on the language's vocabulary.
 //!
-//! The grammar lives in `editors/vscode/syntaxes/rsat.tmLanguage.json`; the compiler's word
-//! tables live in `redsat_lang::syntax`. This test fails when either side gains or loses a word
+//! The VS Code grammar lives in `editors/vscode/syntaxes/rsat.tmLanguage.json`, and the user
+//! guide's highlight.js language in `docs/guide/assets/rsat-highlight.js`; the compiler's word
+//! tables live in `redsat_lang::syntax`. These tests fail when either side gains or loses a word
 //! without the other, so highlighting can never silently drift from the language.
 
 use std::collections::BTreeSet;
@@ -91,6 +92,41 @@ fn the_grammar_highlights_no_word_the_language_lacks() {
         extra.is_empty(),
         "the VS Code grammar highlights unknown words: {extra:?}"
     );
+}
+
+/// The word list `const NAME = `…`;` of the guide's highlighter, split on whitespace.
+fn guide_highlighter_words(name: &str) -> BTreeSet<String> {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/guide/assets/rsat-highlight.js"
+    );
+    let text = std::fs::read_to_string(path).expect("the guide's highlighter exists");
+    let start = format!("const {name} = `");
+    let rest = text
+        .split_once(&start)
+        .unwrap_or_else(|| panic!("the guide's highlighter defines {start}…`"))
+        .1;
+    let list = rest.split('`').next().expect("a closing backtick");
+    list.split_whitespace().map(str::to_string).collect()
+}
+
+#[test]
+fn the_guide_highlighter_knows_exactly_the_words_of_the_language() {
+    let tables = [
+        ("KEYWORDS", KEYWORDS),
+        ("CONTEXTUAL_KEYWORDS", CONTEXTUAL_KEYWORDS),
+        ("BUILTIN_TYPES", BUILTIN_TYPES),
+        ("BUILTIN_FUNCTIONS", BUILTIN_FUNCTIONS),
+        ("PRELUDE_FUNCTIONS", PRELUDE_FUNCTIONS),
+    ];
+    for (name, table) in tables {
+        let expected: BTreeSet<String> = table.iter().map(|word| (*word).to_string()).collect();
+        assert_eq!(
+            guide_highlighter_words(name),
+            expected,
+            "docs/guide/assets/rsat-highlight.js: {name} must list exactly syntax::{name}"
+        );
+    }
 }
 
 #[test]

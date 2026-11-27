@@ -644,6 +644,23 @@ choice below was **measured** with the benchmark suite in `bench/` (`bench/run.s
   that are trivially true or false are decided outright, and very large totalizers
   (n·k > 200,000) fall back to the binary sum.
 - **Division** by a constant power of two is a bit slice; other divisions are relational.
+- **Two-level AIG rewriting.** Creating `a ∧ b` applies the local rules of Brummayer and
+  Biere ("Local Two-Level And-Inverter Graph Minimization without Blowup", 2006):
+  contradiction, idempotence, subsumption, substitution and resolution across two levels. CNF
+  sizes shrink by 2–7%; the effect on solve times is real but uneven (best of 5 runs, one
+  thread):
+
+  | Benchmark | Before | After |
+  |---|---|---|
+  | factoring a 36-bit semiprime | 7.97 s | 4.16 s |
+  | five 32–34-bit semiprimes (total) | 11.6 s | 4.2 s (one instance 7× slower, two 14–22× faster) |
+  | 4×4 magic square | 0.07 s | 0.03 s |
+  | 30-item knapsack | 0.24 s | 0.30 s |
+  | all 10-queens solutions | 1.29 s | 1.51 s |
+
+  The gains come from *substitution* (`¬(x ∧ y) ∧ x = x ∧ ¬y`), which simplifies the partial
+  products of multipliers; without it the rules were neutral. The rules are kept for the large
+  wins on arithmetic. The portfolio (`--threads`) also evens out such per-instance variance.
 
 `--stats` splits each `solve` into *build* time (domains, circuit, CNF) and *search* time (SAT
 calls, decoding). On the largest benchmark (quasigroup completion of order 20: 123k AND gates)

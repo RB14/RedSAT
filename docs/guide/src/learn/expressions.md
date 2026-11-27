@@ -111,8 +111,8 @@ solve all i
 ```
 
 ```text
-i = 2
 i = 0
+i = 2
 ```
 
 Without the guard, `xs[i]` alone would require `i` to be a valid index. An `if` expression
@@ -133,8 +133,8 @@ solve all x
 ```
 
 ```text
-x = 5
 x = 7
+x = 5
 ```
 
 When in doubt, add parentheses.

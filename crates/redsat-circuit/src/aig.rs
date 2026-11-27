@@ -162,12 +162,86 @@ impl Aig {
         if a == Edge::TRUE || a == b {
             return b;
         }
+        if let Some(simpler) = self.two_level(a, b) {
+            return simpler;
+        }
         if let Some(&id) = self.strash.get(&(a, b)) {
             return Edge::new(id, false);
         }
         let id = self.push(Node::And(a, b));
         self.strash.insert((a, b), id);
         Edge::new(id, false)
+    }
+
+    /// The operands of the AND node `edge` points to (ignoring its complement), if any.
+    fn operands(&self, edge: Edge) -> Option<(Edge, Edge)> {
+        match self.nodes[edge.node().index()] {
+            Node::And(x, y) => Some((x, y)),
+            _ => None,
+        }
+    }
+
+    /// Two-level rewriting of `a ∧ b` when an operand is itself a conjunction, possibly negated
+    /// (Brummayer and Biere, "Local Two-Level And-Inverter Graph Minimization without Blowup",
+    /// 2006). None of the rules adds nodes: they find contradictions, repeated or subsumed
+    /// operands, and resolvents that the structural hash alone would miss.
+    fn two_level(&mut self, a: Edge, b: Edge) -> Option<Edge> {
+        for (x, y) in [(a, b), (b, a)] {
+            let Some((x0, x1)) = self.operands(x) else {
+                continue;
+            };
+            let inner = self.operands(y);
+            if x.is_complemented() {
+                // x = ¬(x0 ∧ x1)
+                if y == !x0 || y == !x1 {
+                    return Some(y); // subsumption: ¬(x0 ∧ x1) ∧ ¬x0 = ¬x0
+                }
+                if y == x0 {
+                    return Some(self.and(y, !x1)); // substitution: ¬(x0 ∧ x1) ∧ x0 = x0 ∧ ¬x1
+                }
+                if y == x1 {
+                    return Some(self.and(y, !x0));
+                }
+                match inner {
+                    Some((y0, y1)) if !y.is_complemented() => {
+                        // y = y0 ∧ y1: subsumption (a child of x is refuted by y) …
+                        if [y0, y1].iter().any(|&yj| yj == !x0 || yj == !x1) {
+                            return Some(y);
+                        }
+                        // … and substitution (a child of x is implied by y).
+                        if y0 == x0 || y1 == x0 {
+                            return Some(self.and(y, !x1));
+                        }
+                        if y0 == x1 || y1 == x1 {
+                            return Some(self.and(y, !x0));
+                        }
+                    }
+                    Some((y0, y1)) => {
+                        // resolution: ¬(p ∧ q) ∧ ¬(p ∧ ¬q) = ¬p
+                        for (p, q) in [(x0, x1), (x1, x0)] {
+                            if (y0 == p && y1 == !q) || (y1 == p && y0 == !q) {
+                                return Some(!p);
+                            }
+                        }
+                    }
+                    None => {}
+                }
+            } else {
+                // x = x0 ∧ x1
+                if y == !x0 || y == !x1 {
+                    return Some(Edge::FALSE); // contradiction
+                }
+                if y == x0 || y == x1 {
+                    return Some(x); // idempotence
+                }
+                if let Some((y0, y1)) = inner {
+                    if !y.is_complemented() && [y0, y1].iter().any(|&yj| yj == !x0 || yj == !x1) {
+                        return Some(Edge::FALSE); // contradiction across both conjunctions
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// `a ∨ b`.
@@ -272,6 +346,88 @@ impl Simulation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A formula over four inputs, evaluated directly, to check the AIG's rewriting against.
+    #[derive(Clone, Debug)]
+    enum Formula {
+        Input(usize),
+        Not(Box<Formula>),
+        And(Box<Formula>, Box<Formula>),
+    }
+
+    impl Formula {
+        fn eval(&self, inputs: &[bool]) -> bool {
+            match self {
+                Self::Input(i) => inputs[*i],
+                Self::Not(f) => !f.eval(inputs),
+                Self::And(f, g) => f.eval(inputs) && g.eval(inputs),
+            }
+        }
+
+        fn build(&self, aig: &mut Aig, inputs: &[Edge]) -> Edge {
+            match self {
+                Self::Input(i) => inputs[*i],
+                Self::Not(f) => !f.build(aig, inputs),
+                Self::And(f, g) => {
+                    let (x, y) = (f.build(aig, inputs), g.build(aig, inputs));
+                    aig.and(x, y)
+                }
+            }
+        }
+    }
+
+    /// Random formulas (fixed seed), deep enough for the two-level rules to fire often.
+    fn random_formula(state: &mut u64, depth: u32) -> Formula {
+        *state ^= *state << 13;
+        *state ^= *state >> 7;
+        *state ^= *state << 17;
+        let choice = *state % 7;
+        if depth == 0 || choice < 2 {
+            #[allow(clippy::cast_possible_truncation)]
+            return Formula::Input((*state >> 8) as usize % 4);
+        }
+        if choice < 3 {
+            return Formula::Not(Box::new(random_formula(state, depth - 1)));
+        }
+        Formula::And(
+            Box::new(random_formula(state, depth - 1)),
+            Box::new(random_formula(state, depth - 1)),
+        )
+    }
+
+    #[test]
+    fn rewriting_preserves_every_function() {
+        let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+        for _ in 0..20_000 {
+            let formula = random_formula(&mut state, 5);
+            let mut aig = Aig::new();
+            let inputs: Vec<Edge> = (0..4).map(|_| aig.new_input()).collect();
+            let edge = formula.build(&mut aig, &inputs);
+            for mask in 0..16_u32 {
+                let values: Vec<bool> = (0..4).map(|i| mask >> i & 1 == 1).collect();
+                assert_eq!(
+                    aig.simulate(&values).value(edge),
+                    formula.eval(&values),
+                    "{formula:?} at {mask:04b}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn two_level_rules_shrink_the_graph() {
+        let mut aig = Aig::new();
+        let (x, y, z) = (aig.new_input(), aig.new_input(), aig.new_input());
+        let xy = aig.and(x, y);
+        assert_eq!(aig.and(xy, !x), Edge::FALSE, "contradiction");
+        assert_eq!(aig.and(xy, x), xy, "idempotence");
+        assert_eq!(aig.and(!xy, !x), !x, "subsumption");
+        let x_not_y = aig.and(x, !y);
+        assert_eq!(aig.and(!xy, x), x_not_y, "substitution");
+        let xz = aig.and(x, !y);
+        assert_eq!(aig.and(!xy, !xz), !x, "resolution");
+        let _ = z;
+    }
 
     #[test]
     fn constants_fold_away() {

@@ -1,7 +1,7 @@
 5 olleh e hello, world
-w = ""
 w = "hey"
+w = ""
 a = "xy", b = "z"
 a = "x", b = "yz"
-c = 'u'
 c = 'o'
+c = 'u'

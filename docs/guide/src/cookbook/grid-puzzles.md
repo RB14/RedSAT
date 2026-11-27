@@ -103,13 +103,13 @@ fn board_row(q: int, n: int) -> string {
 
 ```text
 . . . Q . . . .
-. Q . . . . . .
+Q . . . . . . .
 . . . . Q . . .
 . . . . . . . Q
 . . . . . Q . .
-Q . . . . . . .
 . . Q . . . . .
 . . . . . . Q .
+. Q . . . . . .
 8 queens can be placed in 92 ways
 ```
 

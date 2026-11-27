@@ -39,8 +39,8 @@ solve all q
 ```
 
 ```text
-q = Point(x: 3, y: 4)
 q = Point(x: 4, y: 3)
+q = Point(x: 3, y: 4)
 ```
 
 ## The rules

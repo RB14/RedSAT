@@ -305,8 +305,8 @@ print origin, corner, corner.x
 ```
 
 ```text
-p = Point(x: 3, y: 4)
 p = Point(x: 4, y: 3)
+p = Point(x: 3, y: 4)
 Point(x: 0, y: 0) Point(x: 4, y: 4) 4
 ```
 

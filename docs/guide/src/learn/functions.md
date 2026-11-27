@@ -17,8 +17,8 @@ solve all w, h
 
 ```text
 42
-w = 3, h = 8
 w = 4, h = 6
+w = 3, h = 8
 ```
 
 ## Declaring functions
@@ -119,9 +119,9 @@ solve all x
 ```
 
 ```text
-x = 10
-x = 11
 x = 12
+x = 11
+x = 10
 ```
 
 This works inside loops too. Find arrays whose first positive element is at position 2:
@@ -140,10 +140,10 @@ solve all v
 ```
 
 ```text
-v = [0, 0, 1]
 v = [-1, -1, 1]
-v = [-1, 0, 1]
 v = [0, -1, 1]
+v = [0, 0, 1]
+v = [-1, 0, 1]
 ```
 
 A function with a result type must return a value on every path; RedSAT checks this for you.

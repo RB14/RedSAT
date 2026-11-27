@@ -205,17 +205,17 @@ solve all total
 
 ```text
 total = 18
-total = 8
-total = 13
-total = 5
-total = 9
-total = 1
-total = 4
 total = 16
+total = 4
 total = 20
+total = 17
+total = 1
+total = 5
 total = 2
 total = 10
-total = 17
+total = 8
+total = 9
+total = 13
 ```
 
 Many totals can be made in several ways (`5 = 1² + 2² = 2² + 1²`), but since only `total` is

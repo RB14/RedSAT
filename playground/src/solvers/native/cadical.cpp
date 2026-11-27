@@ -14,7 +14,12 @@ struct Engine {
   CaDiCaL::Solver solver;
   Stop stop;
 
-  Engine() { solver.connect_terminator(&stop); }
+  Engine() {
+    // Incremental lazy backtracking: keep the trail between calls, as the native build does
+    // (RedSAT makes many calls in a row; see design §5.5).
+    solver.set("ilb", 2);
+    solver.connect_terminator(&stop);
+  }
   Engine(const Engine &) = delete;
   Engine &operator=(const Engine &) = delete;
   ~Engine() { solver.disconnect_terminator(); }

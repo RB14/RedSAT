@@ -12,7 +12,7 @@ solve all word limit 6
 // Output:
 // word = "bcbcb"
 // word = "bcacb"
-// word = "babab"
-// word = "bacab"
-// word = "ababa"
-// word = "cacac"
+// word = "acaca"
+// word = "acbca"
+// word = "abcba"
+// word = "cbcbc"

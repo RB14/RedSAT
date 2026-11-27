@@ -91,12 +91,12 @@ solve all w
 ```text
 w = "baba"
 w = "caba"
-w = "acac"
-w = "abac"
-w = "abab"
-w = "acab"
+w = "acba"
 w = "caca"
 w = "baca"
 w = "abca"
-w = "acba"
+w = "acac"
+w = "acab"
+w = "abab"
+w = "abac"
 ```

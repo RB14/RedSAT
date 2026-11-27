@@ -664,11 +664,22 @@ choice below was **measured** with the benchmark suite in `bench/` (`bench/run.s
 - **Comparisons decided by ranges** (`x >= 0` for an `x` in `0..=35`) fold to constants before
   any circuit is built, so entailed requirements cost nothing (25% fewer clauses on the
   scheduling example).
-- **CaDiCaL options, measured and rejected.** The profile of enumeration (10-queens, 725 calls)
-  shows 10% of the time in reconstructing eliminated variables. But turning elimination off
-  (`elim=0`) made every benchmark slower. Turning off the "lucky" phases (`lucky=0`) made
-  enumeration 30% and the roster 2× faster, yet most factoring instances and the magic square
-  2–6× slower. The defaults stay.
+- **CaDiCaL options.** Options are fixed when a solver is created. Measured on the whole suite
+  (`node bench/ab.mjs`, medians of 5 runs, one thread; differences under ±5% overall are noise,
+  single programs can swing ±35% between identical builds):
+  - **Kept: incremental lazy backtracking (`ilb=2`, from IntelSAT, Nadel 2022)**, which keeps the
+    trail between calls. 7% faster overall; 10-queens enumeration (725 calls) 1.9×, quasigroup
+    completion 1.3×. On by default, in the browser too.
+  - **In one portfolio member: bounded variable addition (`factor=1`, the core of SBVA, SAT
+    Competition 2023).** Too erratic for a default (38% slower overall, 24× slower to 9× faster
+    on factoring, 4× faster on a 50-item knapsack), which is exactly what a race exploits.
+  - **Rejected:** no elimination (`elim=0`, slower everywhere) and no lucky phases (`lucky=0`,
+    enumeration 30% faster but factoring 2–6× slower).
+- **Optimization strategies, measured and rejected.** Bit-level objective search (Nadel and
+  Ryvchin, TACAS 2016), which fixes the objective's bits most significant first under
+  assumptions, was 11% slower than our binary search (45% on Golomb-7); the published gains rely on
+  a branching preference for the objective bits that CaDiCaL does not offer. Keeping each proven
+  bound as a clause was neutral: CaDiCaL learns it from the failed assumption anyway.
 
 `--stats` splits each `solve` into *build* time (domains, circuit, CNF) and *search* time (SAT
 calls, decoding). On the largest benchmark (quasigroup completion of order 20: 123k AND gates)

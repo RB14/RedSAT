@@ -26,8 +26,14 @@ impl Cadical {
     /// Creates a solver with an empty formula.
     #[must_use]
     pub fn new() -> Self {
+        let mut inner = CaDiCaL::default();
+        // Incremental lazy backtracking (from IntelSAT, Nadel 2022): keep the trail between
+        // calls instead of restarting from scratch. RedSAT makes many calls in a row (one per
+        // solution while enumerating, one per probe while optimizing): measured 1.9× faster on
+        // 10-queens enumeration and neutral elsewhere (design §5.5).
+        let _ = inner.set_option("ilb", 2);
         Self {
-            inner: CaDiCaL::default(),
+            inner,
             num_vars: 0,
             num_clauses: 0,
             known_vars: 0,
@@ -60,6 +66,11 @@ impl Cadical {
         if member >= 3 {
             let _ = inner.set_option("shuffle", 1);
             let _ = inner.set_option("shufflerandom", 1);
+        }
+        if member == 1 {
+            // Bounded variable addition (the core of SBVA, SAT Competition 2023): too erratic as
+            // a default (from 9× faster to 24× slower), which makes it a good race member.
+            let _ = inner.set_option("factor", 1);
         }
         solver
     }

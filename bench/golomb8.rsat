@@ -1,0 +1,8 @@
+// An optimal Golomb ruler with 8 marks: all pairwise distances differ (optimum length: 34).
+var n = 8
+var marks: [int[0..=40]; n]
+require marks[0] == 0
+for i in 1..n { require marks[i - 1] < marks[i] }
+require all_different([marks[j] - marks[i] for i in 0..n for j in i + 1..n])
+require marks[1] - marks[0] < marks[n - 1] - marks[n - 2]     // symmetry breaking
+solve marks minimize marks[n - 1]

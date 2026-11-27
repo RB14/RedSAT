@@ -171,11 +171,11 @@ fn binary(x: int) -> string {
 
 ```text
 60: 00111100
-195: 11000011
-102: 01100110
-165: 10100101
-90: 01011010
 153: 10011001
+165: 10100101
+195: 11000011
+90: 01011010
+102: 01100110
 ```
 
 The function `binary` runs in the `solve` body, on a known `x`, so it is ordinary code.

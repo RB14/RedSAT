@@ -163,8 +163,8 @@ solve all word
 ```text
 word = "baa"
 word = "bae"
-word = "bee"
 word = "bea"
+word = "bee"
 ```
 
 The loop variable cannot be assigned to.
@@ -204,8 +204,8 @@ solve all x
 ```text
 x = 5
 x = 15
-x = 35
 x = 25
+x = 35
 ```
 
 `while cond bound K` unrolls the loop `K` times, each iteration guarded by the condition, and

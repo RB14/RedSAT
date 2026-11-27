@@ -198,8 +198,8 @@ solve all word limit 3
 
 ```text
 word = "aaaa"
-word = "abba"
 word = "acca"
+word = "abba"
 ```
 
 A plain `string` works too, but RedSAT then has to guess a maximum length, 32, and warns you:
@@ -236,8 +236,8 @@ solve all row limit 3
 
 ```text
 row = [2, 3, 4, 1]
-row = [2, 4, 3, 1]
 row = [2, 4, 1, 3]
+row = [2, 4, 3, 1]
 ```
 
 Arrays nest: `[[int[1..=9]; 9]; 9]` is a Sudoku grid, read as `grid[r][c]`. Known arrays are
@@ -279,8 +279,8 @@ solve all alice, bob
 
 ```text
 alice = Juice, bob = Coffee
-alice = Tea, bob = Juice
 alice = Tea, bob = Coffee
+alice = Tea, bob = Juice
 ```
 
 Enum values are written `Drink.Tea` and compared with `==` and `!=`. Enums are declared at the

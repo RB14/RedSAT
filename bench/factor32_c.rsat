@@ -1,0 +1,6 @@
+// Factoring the semiprime 17176985717 = 131063 × 131059 (no hints given).
+var n = 17176985717
+var x, y
+require x > 1 and y > 1 and x <= y
+require x * y == n
+solve x, y

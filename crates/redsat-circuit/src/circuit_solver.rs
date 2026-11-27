@@ -14,6 +14,8 @@ pub struct CircuitSolver<S> {
     encoder: CnfEncoder,
     solver: S,
     model: Option<Simulation>,
+    /// The assumptions of the last solve, with their literals.
+    assumed: Vec<(Edge, redsat_sat::Lit)>,
 }
 
 impl<S: Solver> CircuitSolver<S> {
@@ -24,6 +26,7 @@ impl<S: Solver> CircuitSolver<S> {
             encoder: CnfEncoder::new(),
             solver,
             model: None,
+            assumed: Vec::new(),
         }
     }
 
@@ -56,13 +59,27 @@ impl<S: Solver> CircuitSolver<S> {
     /// For example, an optimizer can ask "is there a solution better than the current one?"
     /// without making the question permanent.
     pub fn solve_assuming(&mut self, assumptions: &[Edge]) -> SolveResult {
-        let lits: Vec<_> = assumptions
+        self.assumed = assumptions
             .iter()
-            .map(|&edge| self.encoder.literal(&self.aig, edge, &mut self.solver))
+            .map(|&edge| {
+                (
+                    edge,
+                    self.encoder.literal(&self.aig, edge, &mut self.solver),
+                )
+            })
             .collect();
+        let lits: Vec<_> = self.assumed.iter().map(|&(_, lit)| lit).collect();
         let result = self.solver.solve_with(&lits);
         self.model = (result == SolveResult::Sat).then(|| self.read_model());
         result
+    }
+
+    /// Whether the assumption `edge` was needed for the last UNSAT answer (it belongs to the
+    /// unsat core). Edges that were not assumed in the last solve report false.
+    pub fn failed(&self, edge: Edge) -> bool {
+        self.assumed
+            .iter()
+            .any(|&(assumed, lit)| assumed == edge && self.solver.failed(lit))
     }
 
     /// The value of `edge` in the last model.

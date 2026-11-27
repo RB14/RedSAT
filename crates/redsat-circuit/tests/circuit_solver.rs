@@ -152,3 +152,26 @@ fn assumptions_hold_for_one_call_only() {
         "the failed assumption left no trace"
     );
 }
+
+#[test]
+fn reports_which_assumptions_conflict() {
+    // x ∈ [0, 15]; the assumptions x > 10, x < 5 and x != 7: the first two conflict.
+    let mut cs = CircuitSolver::new(Cadical::new());
+    let aig = cs.aig_mut();
+    let x = IntVec::new_input(
+        aig,
+        Layout {
+            width: 4,
+            signed: false,
+        },
+    );
+    let above = int::lt(aig, &IntVec::constant(&BigInt::from(10)), &x);
+    let below = int::lt(aig, &x, &IntVec::constant(&BigInt::from(5)));
+    let not_seven = !int::eq(aig, &x, &IntVec::constant(&BigInt::from(7)));
+    assert_eq!(
+        cs.solve_assuming(&[above, below, not_seven]),
+        SolveResult::Unsat
+    );
+    assert!(cs.failed(above) && cs.failed(below));
+    assert!(!cs.failed(not_seven));
+}

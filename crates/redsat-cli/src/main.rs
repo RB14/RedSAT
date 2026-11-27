@@ -15,7 +15,8 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand};
 use redsat_lang::config::{find_config, load_config};
 use redsat_lang::{
-    CompilerOptions, Diagnostic, ExplicitTypes, OptionLayer, SourceFile, UnboundedInts,
+    Answer, AskFn, CompilerOptions, Diagnostic, ExplicitTypes, OptionLayer, SourceFile,
+    UnboundedInts,
 };
 use redsat_sat::{Cadical, SolveResult, Solver, dimacs};
 
@@ -43,6 +44,10 @@ struct Cli {
     /// Print per-solve statistics (domains, bit widths, circuit and CNF sizes, time) to stderr.
     #[arg(long)]
     stats: bool,
+
+    /// Pause after each solution: Enter shows the next one, `a` all of them, `q` stops.
+    #[arg(long)]
+    interactive: bool,
 }
 
 #[derive(Subcommand)]
@@ -105,6 +110,7 @@ fn main() -> ExitCode {
             &cli.file.expect("required by clap"),
             &cli.options,
             cli.stats,
+            cli.interactive,
         ),
     };
     result.unwrap_or_else(|error| {
@@ -148,11 +154,31 @@ fn report(source: &SourceFile, diagnostics: &[Diagnostic]) {
     }
 }
 
-fn run(file: &Path, args: &OptionArgs, stats: bool) -> Result<ExitCode, Box<dyn Error>> {
+fn run(
+    file: &Path,
+    args: &OptionArgs,
+    stats: bool,
+    interactive: bool,
+) -> Result<ExitCode, Box<dyn Error>> {
     let (source, options) = prepare(file, args)?;
     let factory = || Box::new(Cadical::new()) as Box<dyn Solver>;
     let mut out = io::stdout();
-    let outcome = redsat_lang::run(&source, &options, &factory, &mut out);
+    let ask = |shown: u64| {
+        let _ = io::stdout().flush();
+        eprint!("── {shown} shown · [Enter] next · [a] all · [q] quit ── ");
+        let _ = io::stderr().flush();
+        let mut line = String::new();
+        match io::stdin().read_line(&mut line) {
+            Ok(0) | Err(_) => Answer::Quit,
+            Ok(_) => match line.trim() {
+                "a" | "all" => Answer::All,
+                "q" | "quit" => Answer::Quit,
+                _ => Answer::Next,
+            },
+        }
+    };
+    let ask: Option<&AskFn> = if interactive { Some(&ask) } else { None };
+    let outcome = redsat_lang::run_with(&source, &options, &factory, &mut out, ask);
     out.flush()?;
     report(&source, &outcome.diagnostics);
     if stats {

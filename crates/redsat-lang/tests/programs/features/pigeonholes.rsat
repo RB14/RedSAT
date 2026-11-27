@@ -1,0 +1,7 @@
+// Three pigeons, two holes: no two pigeons may share a hole.
+var hole: [int[0..=3]; 3]
+require all_different(hole)
+for i in 0..3 {
+    require hole[i] < 2
+}
+solve hole

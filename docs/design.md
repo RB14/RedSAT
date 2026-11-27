@@ -455,14 +455,18 @@ solve [all | unique] <vars> [limit K] [minimize <expr> | maximize <expr>] [{ bod
   - default: the first solution found (`limit K` asks for the first `K` instead);
   - `all`: every solution, cut off by `limit K` if given;
   - `unique`: one solution plus a proof that no other exists (a second SAT call);
-  - `minimize` / `maximize`: an optimal solution. The solver repeatedly asks, as a temporary
-    *assumption*, "is there a strictly better one?" until the answer is no. The objective is
-    then fixed at its optimum, so `solve all … minimize e` lists **every** optimal solution.
+  - `minimize` / `maximize`: an optimal solution, found by **binary search**. The search runs
+    between the best value found so far and the objective's bound from domain inference. Each
+    probe ("is there one with objective ≤ m?") is a temporary *assumption*, so an
+    unsatisfiable probe leaves no trace. A 40-bit objective needs about 40 SAT calls. The
+    objective is then fixed at its optimum, so `solve all … minimize e` lists **every** optimal
+    solution.
 - **Self-check.** Every decoded model is re-evaluated against all constraints using the
   language's own semantics before it is reported. A mismatch is reported as an internal
   compiler error, never silently as an answer.
-- **Interactive iteration.** `redsat prog.rsat --interactive` pauses after each solution:
-  `[n]ext · [a]ll · [q]uit`.
+- **Interactive iteration.** `redsat prog.rsat --interactive` pauses after each solution of
+  every `solve` (including plain ones): Enter shows the next solution, `a` shows all remaining
+  ones, and `q` moves on.
 - **Don't-cares.** If a listed variable is not constrained at all, the solver picks an
   arbitrary value; RedSAT flags it as *unconstrained* in the default output.
 - **Several `solve` statements.** Constraints accumulate: each `solve` sees *everything*
@@ -474,17 +478,38 @@ solve [all | unique] <vars> [limit K] [minimize <expr> | maximize <expr>] [{ bod
 
 ### 4.7 Explaining "no solution"
 
-Each top-level `require` gets its own *selector literal* `sᵢ`, and its clauses are guarded as
-`¬sᵢ ∨ φᵢ`. The solver runs under the assumptions `s₁ … sₖ`. On UNSAT it reports which
-assumptions it needed (the unsat core), and these map straight back to source spans:
+When a `solve` without an `else` block has no solution, RedSAT explains which requirements
+contradict each other:
 
 ```text
-error: no solution — these constraints conflict:
-  --> shop.rsat:12   require total <= budget
-  --> shop.rsat:17   require count(take) >= 4
+no solution
+note: no solution: these requirements cannot all hold together
+ --> shop.rsat:5:9
+  |
+5 | require x + y == 12
+  |         ^^^^^^^^^^^
+ ::: shop.rsat:7:9
+  |
+7 | require x > 9
+  |         ^^^^^
+ ::: shop.rsat:8:9
+  |
+8 | require y > 5
+  |         ^^^^^
 ```
 
-The core is shrunk further by deletion-based minimisation so explanations stay short.
+How it works:
+- Each source location that contributed requirements gets a *selector literal* `s`, and its
+  clauses are guarded as `¬s ∨ φ`.
+- The solver runs with every selector assumed. Its unsat core (the failed assumptions) names
+  the locations involved.
+- Deletion-based minimisation then drops every location the contradiction does not need.
+- The explanation uses each unknown's *declared* domain, not the inferred one: inferred
+  domains already encode the requirements, so dropping a requirement would not relax them.
+- Explaining repeats the proof a few times. It is skipped when the original proof took more
+  than 10 s, and minimisation stops after 5 s.
+- A "no solution" that holds only within an iterative-deepening bound is not explained,
+  because it is not a proof.
 
 ## 5. Compiler architecture
 
@@ -600,9 +625,10 @@ options:
   --max-int-bits <N>
   --config <redsat.toml>             # instead of searching for one
   --stats                            # per solve: domains, bit widths, circuit and CNF sizes, time
+  --interactive                      # pause after each solution: next / all / quit
 ```
 
-Later: `--interactive` (step through solutions) and `--emit ast|ir|aig|cnf`.
+Later: `--emit ast|ir|aig|cnf`.
 
 ### 6.2 VS Code support
 
@@ -691,7 +717,7 @@ var n = 42              // ok: the initializer determines the type
 | 2     | language server: live diagnostics, autocomplete, hovers with inferred domains and widths       | editor intelligence             |
 | 3 ✅  | arrays (unknown indices too), functions with early returns, comprehensions, built-ins (`all_different`, `sum`, `count`, …), `in`, `if` expressions, bounded `while` | N-Queens, cryptarithms, Sudoku, magic squares |
 | 4 ✅  | `/` `%` on unknowns, bitwise ops, chars, strings with unknown lengths, enums, structs           | palindromes, graph colouring, scheduling |
-| 5     | interactive mode, UNSAT explanations, incremental multiple `solve`s, binary-search optimization | puzzle generation               |
+| 5 ✅  | interactive mode, explanations of "no solution" (minimised unsat cores), binary-search optimization | debuggable models               |
 | 6     | optimiser: encoding selection, symmetry breaking, CSE; benchmark suite                           | performance                     |
 | 7     | REPL, built-in CDCL solver                                                                      | stretch                         |
 

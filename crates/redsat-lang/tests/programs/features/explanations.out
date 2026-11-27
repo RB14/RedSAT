@@ -1,0 +1,14 @@
+no solution
+note: no solution: these requirements cannot all hold together
+ --> explanations.rsat:5:9
+  |
+5 | require x + y == 12
+  |         ^^^^^^^^^^^
+ ::: explanations.rsat:7:9
+  |
+7 | require x > 9
+  |         ^^^^^
+ ::: explanations.rsat:8:9
+  |
+8 | require y > 5
+  |         ^^^^^

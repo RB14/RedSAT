@@ -1,4 +1,4 @@
-//! Errors and warnings, rendered against the source in the style of `rustc`.
+//! Errors, warnings and notes, rendered against the source in the style of `rustc`.
 
 use std::fmt::Write;
 
@@ -11,6 +11,8 @@ pub enum Severity {
     Error,
     /// Something suspicious that does not stop the program.
     Warning,
+    /// Information, such as why a problem has no solution.
+    Note,
 }
 
 /// A message about a span of the source.
@@ -24,7 +26,9 @@ pub struct Diagnostic {
     pub span: Span,
     /// A short label printed under the highlighted span.
     pub label: Option<String>,
-    /// Extra lines printed after the snippet, such as hints.
+    /// Further places that belong to the message, each with a label.
+    pub related: Vec<(Span, String)>,
+    /// Extra lines printed after the snippets, such as hints.
     pub notes: Vec<String>,
 }
 
@@ -37,6 +41,7 @@ impl Diagnostic {
             message: message.into(),
             span,
             label: None,
+            related: vec![],
             notes: vec![],
         }
     }
@@ -50,10 +55,26 @@ impl Diagnostic {
         }
     }
 
+    /// A note at `span`.
+    #[must_use]
+    pub fn note(span: Span, message: impl Into<String>) -> Self {
+        Self {
+            severity: Severity::Note,
+            ..Self::error(span, message)
+        }
+    }
+
     /// Adds a label under the highlighted span.
     #[must_use]
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    /// Adds another highlighted place.
+    #[must_use]
+    pub fn with_related(mut self, span: Span, label: impl Into<String>) -> Self {
+        self.related.push((span, label.into()));
         self
     }
 
@@ -77,7 +98,7 @@ impl Diagnostic {
         self.severity == Severity::Error
     }
 
-    /// Renders the diagnostic with a source snippet:
+    /// Renders the diagnostic with source snippets:
     ///
     /// ```text
     /// error: unknown variable `z`
@@ -88,39 +109,52 @@ impl Diagnostic {
     /// ```
     #[must_use]
     pub fn render(&self, source: &SourceFile) -> String {
-        let (line, column) = source.line_col(self.span.start);
-        let line_text = source.line_text(line);
-        let gutter = " ".repeat(line.to_string().len());
+        let places: Vec<(Span, Option<&str>)> = std::iter::once((self.span, self.label.as_deref()))
+            .chain(
+                self.related
+                    .iter()
+                    .map(|(span, label)| (*span, Some(label.as_str()))),
+            )
+            .collect();
+        let widest_line = places
+            .iter()
+            .map(|(span, _)| source.line_col(span.start).0)
+            .max()
+            .unwrap_or(1);
+        let gutter = " ".repeat(widest_line.to_string().len());
         let severity = match self.severity {
             Severity::Error => "error",
             Severity::Warning => "warning",
+            Severity::Note => "note",
         };
-        // Underline the span's part on its first line, at least one character wide.
-        let line_end = source.line_end(line);
-        let underline_end = self
-            .span
-            .end
-            .clamp(self.span.start, line_end.max(self.span.start));
-        let underline_len = source.text()[self.span.start..underline_end]
-            .chars()
-            .count()
-            .max(1);
 
         let mut out = String::new();
         let _ = writeln!(out, "{severity}: {}", self.message);
-        let _ = writeln!(out, "{gutter}--> {}:{line}:{column}", source.name());
-        let _ = writeln!(out, "{gutter} |");
-        let _ = writeln!(out, "{line} | {line_text}");
-        let _ = write!(
-            out,
-            "{gutter} | {}{}",
-            " ".repeat(column - 1),
-            "^".repeat(underline_len)
-        );
-        if let Some(label) = &self.label {
-            let _ = write!(out, " {label}");
+        for (index, (span, label)) in places.iter().enumerate() {
+            let (line, column) = source.line_col(span.start);
+            let line_text = source.line_text(line);
+            // Underline the span's part on its first line, at least one character wide.
+            let line_end = source.line_end(line);
+            let underline_end = span.end.clamp(span.start, line_end.max(span.start));
+            let underline_len = source.text()[span.start..underline_end]
+                .chars()
+                .count()
+                .max(1);
+            let arrow = if index == 0 { "-->" } else { ":::" };
+            let _ = writeln!(out, "{gutter}{arrow} {}:{line}:{column}", source.name());
+            let _ = writeln!(out, "{gutter} |");
+            let _ = writeln!(out, "{line:>width$} | {line_text}", width = gutter.len());
+            let _ = write!(
+                out,
+                "{gutter} | {}{}",
+                " ".repeat(column - 1),
+                "^".repeat(underline_len)
+            );
+            if let Some(label) = label.filter(|label| !label.is_empty()) {
+                let _ = write!(out, " {label}");
+            }
+            out.push('\n');
         }
-        out.push('\n');
         for note in &self.notes {
             let _ = writeln!(out, "{gutter} = {note}");
         }
@@ -142,6 +176,18 @@ mod tests {
             diagnostic.render(&source),
             "error: unknown variable `z`\n --> prog.rsat:2:9\n  |\n2 | require z > 1\n  |         ^ \
              not declared\n  = help: declare it with `var z`\n"
+        );
+    }
+
+    #[test]
+    fn renders_related_places() {
+        let source = SourceFile::new("prog.rsat", "require a\nrequire b\n");
+        let diagnostic = Diagnostic::note(Span::new(8, 9), "these conflict")
+            .with_related(Span::new(18, 19), "and this");
+        assert_eq!(
+            diagnostic.render(&source),
+            "note: these conflict\n --> prog.rsat:1:9\n  |\n1 | require a\n  |         ^\n \
+             ::: prog.rsat:2:9\n  |\n2 | require b\n  |         ^ and this\n"
         );
     }
 }

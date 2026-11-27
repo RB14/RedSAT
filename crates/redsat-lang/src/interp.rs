@@ -21,7 +21,6 @@ use std::rc::Rc;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 
-use crate::SolverFactory;
 use crate::ast::{
     Access, Arg, BinaryOp, Block, Clause, Expr, ExprKind, FnDecl, Ident, Iterable, Place, Program,
     Range, Solve, SolveMode, Stmt, StmtKind, StrPart, TypeExpr, TypeKind, UnaryOp, VarDecl,
@@ -33,6 +32,7 @@ use crate::domain::Interval;
 use crate::ir::{BitOp, Constant, Sort, TermId, TermStore, euclid};
 use crate::solve::{self, Constraint, SolveOutcome, SolveRequest, SolveStats};
 use crate::source::{SourceFile, Span};
+use crate::{AskFn, SolverFactory};
 
 type Result<T> = std::result::Result<T, Diagnostic>;
 
@@ -145,6 +145,7 @@ pub(crate) struct Interpreter<'a> {
     types: &'a TypeInfo,
     factory: &'a SolverFactory,
     out: &'a mut (dyn Write + Send),
+    ask: Option<&'a AskFn>,
     store: TermStore,
     constraints: Vec<Constraint>,
     scopes: Vec<Scope>,
@@ -166,6 +167,7 @@ impl<'a> Interpreter<'a> {
         types: &'a TypeInfo,
         factory: &'a SolverFactory,
         out: &'a mut (dyn Write + Send),
+        ask: Option<&'a AskFn>,
     ) -> Self {
         Self {
             source,
@@ -173,6 +175,7 @@ impl<'a> Interpreter<'a> {
             types,
             factory,
             out,
+            ask,
             store: TermStore::default(),
             constraints: Vec::new(),
             scopes: vec![Scope::default()],
@@ -688,6 +691,8 @@ impl<'a> Interpreter<'a> {
             limit,
             objective,
             span,
+            explain: solve.else_block.is_none(),
+            ask: self.ask,
         };
         let body = solve.body.as_ref();
         let result = solve::solve(&store, &request, options, factory, &mut |model| {
@@ -701,13 +706,17 @@ impl<'a> Interpreter<'a> {
         self.stats.push(stats);
         match outcome {
             SolveOutcome::Solved => Ok(()),
-            SolveOutcome::NoSolution { searched } => match &solve.else_block {
+            SolveOutcome::NoSolution { searched, conflict } => match &solve.else_block {
                 Some(block) => self.exec_block(block).map(|_| ()),
                 None => {
                     let note = searched.map_or_else(String::new, |(bits, names)| {
                         format!(" with |{}| < 2^{bits}", names.join("|, |"))
                     });
-                    self.write_line(&format!("no solution{note}"), span)
+                    self.write_line(&format!("no solution{note}"), span)?;
+                    if let Some(conflict) = conflict {
+                        self.warnings.push(explanation(span, &conflict));
+                    }
+                    Ok(())
                 }
             },
             SolveOutcome::NotUnique { first, second } => Err(Diagnostic::error(
@@ -2402,4 +2411,25 @@ fn concrete_arithmetic(op: BinaryOp, a: &BigInt, b: &BigInt, rhs_span: Span) -> 
         BinaryOp::Shr => a >> small(b, "the shift amount")?,
         other => unreachable!("not arithmetic: {}", other.symbol()),
     })
+}
+
+/// A note naming the requirements that cannot hold together.
+fn explanation(solve: Span, conflict: &[Span]) -> Diagnostic {
+    match conflict.split_first() {
+        None => Diagnostic::note(
+            solve,
+            "no solution: the declared types alone cannot be satisfied",
+        ),
+        Some((first, rest)) => {
+            let message = if rest.is_empty() {
+                "no solution: this requirement can never hold"
+            } else {
+                "no solution: these requirements cannot all hold together"
+            };
+            rest.iter()
+                .fold(Diagnostic::note(*first, message), |note, span| {
+                    note.with_related(*span, "")
+                })
+        }
+    }
 }

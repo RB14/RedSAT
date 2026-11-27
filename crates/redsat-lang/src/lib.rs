@@ -38,6 +38,20 @@ use crate::interp::Interpreter;
 /// Creates a fresh SAT solver. RedSAT calls it once per `solve` attempt.
 pub type SolverFactory = dyn Fn() -> Box<dyn Solver> + Sync;
 
+/// What to do after a solution in interactive mode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Answer {
+    /// Show the next solution, then ask again.
+    Next,
+    /// Show all remaining solutions without asking.
+    All,
+    /// Stop enumerating.
+    Quit,
+}
+
+/// Asked after each solution in interactive mode, with the number of solutions shown so far.
+pub type AskFn = dyn Fn(u64) -> Answer + Sync;
+
 /// The result of running a program.
 #[derive(Debug, Default)]
 pub struct RunOutcome {
@@ -91,7 +105,19 @@ pub fn run(
     factory: &SolverFactory,
     out: &mut (dyn Write + Send),
 ) -> RunOutcome {
-    with_large_stack(|| run_here(source, options, factory, out))
+    run_with(source, options, factory, out, None)
+}
+
+/// Like [`run`], but every `solve` asks `ask` after each solution whether to continue, as with
+/// `redsat --interactive`.
+pub fn run_with(
+    source: &SourceFile,
+    options: &CompilerOptions,
+    factory: &SolverFactory,
+    out: &mut (dyn Write + Send),
+    ask: Option<&AskFn>,
+) -> RunOutcome {
+    with_large_stack(|| run_here(source, options, factory, out, ask))
 }
 
 fn run_here(
@@ -99,6 +125,7 @@ fn run_here(
     options: &CompilerOptions,
     factory: &SolverFactory,
     out: &mut (dyn Write + Send),
+    ask: Option<&AskFn>,
 ) -> RunOutcome {
     let (program, types, mut diagnostics) = match front_end(source, options) {
         Ok(checked) => checked,
@@ -109,7 +136,7 @@ fn run_here(
             };
         }
     };
-    let mut interpreter = Interpreter::new(source, options, &types, factory, out);
+    let mut interpreter = Interpreter::new(source, options, &types, factory, out, ask);
     let result = interpreter.run(&program);
     diagnostics.append(&mut interpreter.warnings);
     if let Err(error) = result {

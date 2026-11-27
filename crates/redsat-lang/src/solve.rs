@@ -7,14 +7,14 @@ use num_traits::One;
 use redsat_circuit::{CircuitSolver, Edge, IntVec, int};
 use redsat_sat::{SolveResult, Solver};
 
-use crate::SolverFactory;
 use crate::ast::{Objective, SolveMode};
 use crate::blast::{self, Blasted};
 use crate::config::{CompilerOptions, UnboundedInts};
 use crate::diagnostic::Diagnostic;
-use crate::domain::{self, Interval};
+use crate::domain::{self, Ext, Interval};
 use crate::ir::{Constant, Sort, Term, TermId, TermStore};
 use crate::source::{SourceFile, Span};
+use crate::{Answer, AskFn, SolverFactory};
 
 /// A requirement accumulated by the program.
 #[derive(Clone, Debug)]
@@ -32,6 +32,10 @@ pub(crate) struct SolveRequest<'a> {
     pub limit: Option<u64>,
     pub objective: Option<(Objective, TermId)>,
     pub span: Span,
+    /// Whether to explain a proven "no solution".
+    pub explain: bool,
+    /// Asked after each solution in interactive mode.
+    pub ask: Option<&'a AskFn>,
 }
 
 /// How a `solve` ended.
@@ -42,6 +46,8 @@ pub(crate) enum SolveOutcome {
     /// (because some unknowns had no inferable bounds), so the claim is not a proof.
     NoSolution {
         searched: Option<(u32, Vec<String>)>,
+        /// The source locations of requirements that cannot hold together, when explained.
+        conflict: Option<Vec<Span>>,
     },
     /// `solve unique` found two different solutions.
     NotUnique {
@@ -123,8 +129,16 @@ pub(crate) fn solve(
     let required: Vec<TermId> = request.constraints.iter().map(|c| c.term).collect();
 
     let Some(ranges) = domain::propagate(store, &required) else {
+        let conflict = explain_if_cheap(store, request, options, factory, start);
         stats.elapsed = start.elapsed();
-        return Ok((SolveOutcome::NoSolution { searched: None }, stats, warnings));
+        return Ok((
+            SolveOutcome::NoSolution {
+                searched: None,
+                conflict,
+            },
+            stats,
+            warnings,
+        ));
     };
 
     let mut roots = required.clone();
@@ -164,7 +178,10 @@ pub(crate) fn solve(
             &domains,
             factory,
         );
-        let outcome = attempt.run(request, on_solution)?;
+        let objective_range = request
+            .objective
+            .map_or_else(Interval::full, |(_, term)| ranges[term.index()].clone());
+        let outcome = attempt.run(request, &objective_range, on_solution)?;
         attempt.record(&mut stats, store, &relevant, &domains);
         let can_deepen =
             !unbounded.is_empty() && magnitude.saturating_mul(2) <= options.max_int_bits;
@@ -193,6 +210,14 @@ pub(crate) fn solve(
                     SolveOutcome::NoSolution { .. } if !unbounded.is_empty() => {
                         SolveOutcome::NoSolution {
                             searched: Some((magnitude, names)),
+                            conflict: None,
+                        }
+                    }
+                    SolveOutcome::NoSolution { searched: None, .. } => {
+                        let conflict = explain_if_cheap(store, request, options, factory, start);
+                        SolveOutcome::NoSolution {
+                            searched: None,
+                            conflict,
                         }
                     }
                     other => other,
@@ -384,13 +409,19 @@ impl<'a> Attempt<'a> {
     fn run(
         &mut self,
         request: &SolveRequest<'_>,
+        objective_range: &Interval,
         on_solution: &mut Callback<'_>,
     ) -> Result<SolveOutcome, Diagnostic> {
+        let enumerate =
+            request.mode == SolveMode::All || request.limit.is_some() || request.ask.is_some();
         if let Some((direction, objective)) = request.objective {
-            let Some(optimal) = self.optimize(direction, objective)? else {
-                return Ok(SolveOutcome::NoSolution { searched: None });
+            let Some(optimal) = self.optimize(direction, objective, objective_range)? else {
+                return Ok(SolveOutcome::NoSolution {
+                    searched: None,
+                    conflict: None,
+                });
             };
-            if request.mode == SolveMode::First && request.limit.is_none() {
+            if request.mode == SolveMode::First && !enumerate {
                 self.report(&optimal, on_solution)?;
                 return Ok(SolveOutcome::Solved);
             }
@@ -398,71 +429,202 @@ impl<'a> Attempt<'a> {
             // the optimal solutions.
         }
 
-        match (request.mode, request.limit) {
-            (SolveMode::Unique, _) => {
-                let Some(first) = self.next_model(&[])? else {
-                    return Ok(SolveOutcome::NoSolution { searched: None });
-                };
-                self.block(&request.projection);
-                if let Some(second) = self.next_model(&[])? {
-                    return Ok(SolveOutcome::NotUnique { first, second });
-                }
-                self.report(&first, on_solution)?;
-                Ok(SolveOutcome::Solved)
+        if request.mode == SolveMode::Unique {
+            let Some(first) = self.next_model(&[])? else {
+                return Ok(SolveOutcome::NoSolution {
+                    searched: None,
+                    conflict: None,
+                });
+            };
+            self.block(&request.projection);
+            if let Some(second) = self.next_model(&[])? {
+                return Ok(SolveOutcome::NotUnique { first, second });
             }
-            (SolveMode::First, None) => {
-                let Some(model) = self.next_model(&[])? else {
-                    return Ok(SolveOutcome::NoSolution { searched: None });
-                };
-                self.report(&model, on_solution)?;
-                Ok(SolveOutcome::Solved)
-            }
-            (SolveMode::All | SolveMode::First, limit) => {
-                let mut count = 0u64;
-                while limit.is_none_or(|limit| count < limit) {
-                    let Some(model) = self.next_model(&[])? else {
-                        break;
-                    };
-                    self.report(&model, on_solution)?;
-                    count += 1;
-                    self.block(&request.projection);
+            self.report(&first, on_solution)?;
+            return Ok(SolveOutcome::Solved);
+        }
+        if !enumerate {
+            let Some(model) = self.next_model(&[])? else {
+                return Ok(SolveOutcome::NoSolution {
+                    searched: None,
+                    conflict: None,
+                });
+            };
+            self.report(&model, on_solution)?;
+            return Ok(SolveOutcome::Solved);
+        }
+
+        let mut ask = request.ask;
+        let mut count = 0u64;
+        while request.limit.is_none_or(|limit| count < limit) {
+            let Some(model) = self.next_model(&[])? else {
+                break;
+            };
+            self.report(&model, on_solution)?;
+            count += 1;
+            self.block(&request.projection);
+            if let Some(asker) = ask {
+                match asker(count) {
+                    Answer::Next => {}
+                    Answer::All => ask = None,
+                    Answer::Quit => break,
                 }
-                Ok(if count == 0 {
-                    SolveOutcome::NoSolution { searched: None }
-                } else {
-                    SolveOutcome::Solved
-                })
             }
         }
+        Ok(if count == 0 {
+            SolveOutcome::NoSolution {
+                searched: None,
+                conflict: None,
+            }
+        } else {
+            SolveOutcome::Solved
+        })
     }
 
-    /// Finds an optimal model, then fixes the objective to its optimal value so that the
-    /// requested mode (first/all/unique) applies among optimal solutions only.
+    /// Finds an optimal model by binary search between the best value found so far and the
+    /// bound on the objective, then fixes the objective to its optimum so that the requested
+    /// mode (first/all/unique) applies among optimal solutions only.
     fn optimize(
         &mut self,
         direction: Objective,
         objective: TermId,
+        range: &Interval,
     ) -> Result<Option<Vec<Constant>>, Diagnostic> {
         let Some(mut best) = self.next_model(&[])? else {
             return Ok(None);
         };
         let target = self.blasted.of(objective).int().clone();
+        let layout = target.layout();
+        let mut lo = layout.min();
+        let mut hi = layout.max();
+        if let Ext::Fin(bound) = &range.lo {
+            lo = lo.max(bound.clone());
+        }
+        if let Ext::Fin(bound) = &range.hi {
+            hi = hi.min(bound.clone());
+        }
         loop {
             let value = best[objective.index()].as_int().clone();
-            let bound = IntVec::constant(&value);
-            let aig = self.cs.aig_mut();
-            let better = match direction {
-                Objective::Minimize => int::lt(aig, &target, &bound),
-                Objective::Maximize => int::lt(aig, &bound, &target),
-            };
-            match self.next_model(&[better])? {
-                Some(model) => best = model,
-                None => {
-                    let optimal = int::eq(self.cs.aig_mut(), &target, &bound);
-                    self.cs.require(optimal);
-                    return Ok(Some(best));
+            let (mid, probe) = match direction {
+                Objective::Minimize => {
+                    if lo >= value {
+                        break;
+                    }
+                    let mid: BigInt = &lo + (&value - 1 - &lo) / 2;
+                    let probe = int::le(self.cs.aig_mut(), &target, &IntVec::constant(&mid));
+                    (mid, probe)
                 }
+                Objective::Maximize => {
+                    if hi <= value {
+                        break;
+                    }
+                    let mid: BigInt = &value + 1 + (&hi - &value - 1) / 2;
+                    let probe = int::le(self.cs.aig_mut(), &IntVec::constant(&mid), &target);
+                    (mid, probe)
+                }
+            };
+            match self.next_model(&[probe])? {
+                Some(model) => best = model,
+                None => match direction {
+                    Objective::Minimize => lo = mid + 1,
+                    Objective::Maximize => hi = mid - 1,
+                },
             }
         }
+        let value = best[objective.index()].as_int().clone();
+        let optimal = int::eq(self.cs.aig_mut(), &target, &IntVec::constant(&value));
+        self.cs.require(optimal);
+        Ok(Some(best))
     }
+}
+
+/// Explains a proven "no solution" when that is likely to be quick: only if it was asked for and
+/// the original proof took less than [`EXPLAIN_IF_FASTER_THAN`].
+fn explain_if_cheap(
+    store: &TermStore,
+    request: &SolveRequest<'_>,
+    options: &CompilerOptions,
+    factory: &SolverFactory,
+    start: Instant,
+) -> Option<Vec<Span>> {
+    if !request.explain || start.elapsed() > EXPLAIN_IF_FASTER_THAN {
+        return None;
+    }
+    explain(store, request.constraints, options, factory)
+}
+
+/// Explaining stops shrinking the explanation after this long.
+const EXPLAIN_BUDGET: Duration = Duration::from_secs(5);
+/// Proofs slower than this are not explained (explaining repeats the proof several times).
+const EXPLAIN_IF_FASTER_THAN: Duration = Duration::from_secs(10);
+
+/// Finds a small set of requirements that cannot hold together. Each source location gets a
+/// selector that is assumed true; the solver's unsat core names the locations involved, and
+/// deletion-based minimization drops the ones that are not needed.
+///
+/// Unknowns use their *declared* domains here: the propagated domains already encode the
+/// requirements, so dropping a requirement would not relax them.
+fn explain(
+    store: &TermStore,
+    constraints: &[Constraint],
+    options: &CompilerOptions,
+    factory: &SolverFactory,
+) -> Option<Vec<Span>> {
+    let started = Instant::now();
+    let mut groups: Vec<(Span, Vec<TermId>)> = Vec::new();
+    for constraint in constraints {
+        match groups.iter_mut().find(|(span, _)| *span == constraint.span) {
+            Some((_, terms)) => terms.push(constraint.term),
+            None => groups.push((constraint.span, vec![constraint.term])),
+        }
+    }
+    let roots: Vec<TermId> = constraints.iter().map(|c| c.term).collect();
+    let relevant = relevant_unknowns(store, &roots);
+    let mut declared = vec![Interval::full(); store.len()];
+    for unknown in store.unknowns() {
+        declared[unknown.term.index()] = unknown.domain.clone();
+    }
+    let (domains, _) = final_domains(store, &declared, &relevant, options.fallback_int_bits);
+    let sizes = domain::forward_sizes(store, &domains);
+
+    let mut cs = CircuitSolver::new(factory());
+    let blasted = blast::blast(store, &sizes, &domains, &roots, cs.aig_mut());
+    for &edge in &blasted.side_constraints {
+        cs.require(edge);
+    }
+    let mut selectors = Vec::with_capacity(groups.len());
+    for (_, terms) in &groups {
+        let selector = cs.aig_mut().new_input();
+        for &term in terms {
+            let edge = blasted.of(term).edge();
+            let guarded = cs.aig_mut().implies(selector, edge);
+            cs.require(guarded);
+        }
+        selectors.push(selector);
+    }
+    if cs.solve_assuming(&selectors) != SolveResult::Unsat {
+        return None;
+    }
+    let mut core: Vec<usize> = (0..groups.len())
+        .filter(|&g| cs.failed(selectors[g]))
+        .collect();
+    let mut index = 0;
+    while index < core.len() && started.elapsed() < EXPLAIN_BUDGET {
+        let candidate: Vec<usize> = core
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| i != index)
+            .map(|(_, &g)| g)
+            .collect();
+        let assumptions: Vec<_> = candidate.iter().map(|&g| selectors[g]).collect();
+        if cs.solve_assuming(&assumptions) == SolveResult::Unsat {
+            core = candidate
+                .into_iter()
+                .filter(|&g| cs.failed(selectors[g]))
+                .collect();
+        } else {
+            index += 1;
+        }
+    }
+    Some(core.into_iter().map(|g| groups[g].0).collect())
 }

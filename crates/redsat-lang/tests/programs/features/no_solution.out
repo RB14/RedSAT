@@ -1,2 +1,7 @@
 no solution
 50 is not a perfect square
+note: no solution: this requirement can never hold
+ --> no_solution.rsat:2:9
+  |
+2 | require x * x == 50
+  |         ^^^^^^^^^^^

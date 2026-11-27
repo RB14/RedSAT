@@ -1,0 +1,9 @@
+// When there is no solution, RedSAT names the requirements that cannot hold together and
+// leaves out the ones that are not involved.
+var x, y: int[0..=10]
+var z: int[0..=5]
+require x + y == 12
+require z > 3
+require x > 9
+require y > 5
+solve x, y

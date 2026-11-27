@@ -1,0 +1,10 @@
+no solution
+note: no solution: these requirements cannot all hold together
+ --> pigeonholes.rsat:3:9
+  |
+3 | require all_different(hole)
+  |         ^^^^^^^^^^^^^^^^^^^
+ ::: pigeonholes.rsat:5:13
+  |
+5 |     require hole[i] < 2
+  |             ^^^^^^^^^^^

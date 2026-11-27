@@ -1,0 +1,4 @@
+// Optimization over a 40-bit range: binary search needs about 40 SAT calls at most.
+var x: int[0..=1_000_000_000_000]
+require x * x >= 999_999_999_999
+solve x minimize x

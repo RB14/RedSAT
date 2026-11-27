@@ -136,6 +136,10 @@ impl Blaster<'_> {
                     let (lo, hi) = domains[unknown.index()]
                         .bounds()
                         .expect("blasted unknowns are bounded");
+                    if lo == hi {
+                        // Domain inference fixed the value: no search needed.
+                        return Bits::Int(IntVec::constant(lo));
+                    }
                     let layout = Layout::for_range(lo, hi);
                     let vector = IntVec::new_input(self.aig, layout);
                     if layout.min() < *lo {

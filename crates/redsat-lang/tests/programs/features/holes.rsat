@@ -1,0 +1,12 @@
+// `?` is an anonymous unknown; its type comes from the context.
+var row: [int[1..=4]; 4] = [1, ?, ?, 4]
+require all_different(row) and row[1] < row[2]
+solve row
+enum Color { Red, Green }
+struct P { x: int[0..=3], c: Color }
+var p: P = ?
+require p.x == 2 and p.c != Color.Red
+solve p
+var flags = [true, ?, false]
+require count(flags) == 2
+solve flags

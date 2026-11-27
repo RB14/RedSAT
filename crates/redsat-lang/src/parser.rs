@@ -759,6 +759,7 @@ impl Parser {
             TokenKind::True => ExprKind::Bool(true),
             TokenKind::False => ExprKind::Bool(false),
             TokenKind::Char(value) => ExprKind::Char(value),
+            TokenKind::Question => ExprKind::Hole,
             TokenKind::Str(raw) => ExprKind::Str(string_parts(&raw, span.start + 1)?),
             TokenKind::Ident(name) => {
                 self.bump();
@@ -1051,6 +1052,7 @@ mod tests {
             ExprKind::Bool(b) => b.to_string(),
             ExprKind::Char(c) => format!("{c:?}"),
             ExprKind::Var(ident) => ident.name.clone(),
+            ExprKind::Hole => "?".into(),
             ExprKind::Str(_) => "\"…\"".into(),
             ExprKind::Unary(UnaryOp::Neg, e) => format!("(-{})", show(e)),
             ExprKind::Unary(UnaryOp::Not, e) => format!("(not {})", show(e)),

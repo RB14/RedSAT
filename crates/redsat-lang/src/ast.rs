@@ -288,6 +288,8 @@ pub enum ExprKind {
     Str(Vec<StrPart>),
     /// A variable (or an enum/struct name in `Color.Red` / `Point(…)`).
     Var(Ident),
+    /// `?`: a fresh anonymous unknown whose type comes from the context.
+    Hole,
     /// `-e` or `not e`.
     Unary(UnaryOp, Box<Expr>),
     /// `a op b`.

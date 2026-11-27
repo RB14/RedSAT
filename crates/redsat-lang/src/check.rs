@@ -96,6 +96,8 @@ pub struct Symbol {
 #[derive(Clone, Debug, Default)]
 pub struct TypeInfo {
     decl_types: Vec<Option<Type>>,
+    /// The type of each `?`, by the offset of its span.
+    hole_types: HashMap<usize, Type>,
     /// Declared enums.
     pub enums: Vec<EnumInfo>,
     /// Declared structs.
@@ -115,6 +117,16 @@ impl TypeInfo {
         self.decl_types[decl.0]
             .as_ref()
             .expect("type checking succeeded")
+    }
+
+    /// The type of the `?` at `span`.
+    ///
+    /// # Panics
+    ///
+    /// If checking failed for it.
+    #[must_use]
+    pub fn hole_type(&self, span: Span) -> &Type {
+        &self.hole_types[&span.start]
     }
 
     /// The enum called `name`.
@@ -161,6 +173,7 @@ pub fn check(program: &Program, options: &CompilerOptions) -> (TypeInfo, Vec<Dia
         return_type: None,
         diagnostics: Vec::new(),
         symbols: Vec::new(),
+        holes: Vec::new(),
     };
     checker.register_declarations(&program.stmts);
     for stmt in &program.stmts {
@@ -227,6 +240,8 @@ struct Checker<'a> {
     diagnostics: Vec<Diagnostic>,
     /// Declared names, with their inference type when the detail is rendered at the end.
     symbols: Vec<(Symbol, Option<Ty>)>,
+    /// Every `?` with its inference type.
+    holes: Vec<(Span, Ty)>,
 }
 
 impl Checker<'_> {
@@ -543,8 +558,30 @@ impl Checker<'_> {
                 symbol
             })
             .collect();
+        let mut hole_types = HashMap::new();
+        for (span, ty) in std::mem::take(&mut self.holes) {
+            match self.resolve_deep(&ty) {
+                Ty::Var(_) => self.error(
+                    Diagnostic::error(span, "cannot infer the type of this `?`").with_help(
+                        "use it where the type is known, e.g. in `var x: int = ?` or `x == ?`",
+                    ),
+                ),
+                Ty::Bool | Ty::Int | Ty::Char | Ty::Enum(_) | Ty::Struct(_) => {
+                    hole_types.insert(span.start, self.to_type(&ty).expect("resolved"));
+                }
+                Ty::Error => {}
+                other => self.error(Diagnostic::error(
+                    span,
+                    format!(
+                        "`?` stands for a single unknown value, not a `{}`",
+                        self.name_of(&other)
+                    ),
+                )),
+            }
+        }
         let info = TypeInfo {
             decl_types,
+            hole_types,
             enums: self.enums,
             structs: self.structs,
             symbols,
@@ -986,6 +1023,11 @@ impl Checker<'_> {
             ExprKind::Var(ident) => self
                 .lookup(&ident.name, ident.span)
                 .map_or(Ty::Error, |b| b.ty),
+            ExprKind::Hole => {
+                let ty = self.fresh();
+                self.holes.push((expr.span, ty.clone()));
+                ty
+            }
             ExprKind::Unary(op, operand) => {
                 let ty = self.expr(operand);
                 let expected = match op {

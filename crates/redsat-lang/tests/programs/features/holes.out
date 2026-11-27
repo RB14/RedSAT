@@ -1,0 +1,3 @@
+row = [1, 2, 3, 4]
+p = P(x: 2, c: Green)
+flags = [true, true, false]

@@ -1,0 +1,5 @@
+error: `?` stands for a single unknown value, not a `[int]`
+ --> untyped_hole.rsat:1:19
+  |
+1 | var a: [int; 2] = ?
+  |                   ^

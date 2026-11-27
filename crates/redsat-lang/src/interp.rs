@@ -1176,6 +1176,13 @@ impl<'a> Interpreter<'a> {
                     None => value,
                 })
             }
+            ExprKind::Hole => {
+                self.forbid_in_solve_body("`?`", expr.span)?;
+                let ty = self.types.hole_type(expr.span).clone();
+                let shape = self.shape_of_type(&ty, expr.span)?;
+                let (line, column) = self.source.line_col(expr.span.start);
+                self.new_unknown(&format!("?{line}:{column}"), &shape, expr.span)
+            }
             ExprKind::Unary(op, operand) => {
                 let value = self.eval(operand)?;
                 Ok(self.unary(*op, value))

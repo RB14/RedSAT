@@ -148,6 +148,87 @@ fn run_here(
     }
 }
 
+/// The inferred domain of the unknowns created by one declaration.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InferredDomain {
+    /// The declared name's location.
+    pub span: Span,
+    /// The declared name.
+    pub name: String,
+    /// The domain, e.g. `[2, 500018000049]`, or `bool` (the hull over all its unknowns, for an
+    /// array or struct).
+    pub domain: String,
+    /// The bit width of one unknown (the widest, for an array or struct).
+    pub width: usize,
+    /// How many unknowns the declaration created (more than one for arrays and structs).
+    pub unknowns: usize,
+}
+
+/// What editor tooling needs to know about a program.
+#[derive(Debug, Default)]
+pub struct Analysis {
+    /// Errors and warnings from parsing, type checking and elaboration.
+    pub diagnostics: Vec<Diagnostic>,
+    /// Types and symbols, when the program parsed.
+    pub types: Option<check::TypeInfo>,
+    /// The inferred domain of each unknown declaration, when elaboration got that far.
+    pub domains: Vec<InferredDomain>,
+}
+
+/// Analyses `source` for editor tooling: parses, type-checks, and elaborates the program as a run
+/// would, but stops each `solve` after domain inference instead of calling the SAT solver.
+/// Elaboration gives up silently after `budget`.
+#[must_use]
+pub fn analyze(
+    source: &SourceFile,
+    options: &CompilerOptions,
+    budget: std::time::Duration,
+) -> Analysis {
+    with_large_stack(|| {
+        let program = match parser::parse(source) {
+            Ok(program) => program,
+            Err(error) => {
+                return Analysis {
+                    diagnostics: vec![error],
+                    ..Analysis::default()
+                };
+            }
+        };
+        let (types, mut diagnostics) = check::check(&program, options);
+        if diagnostics.iter().any(Diagnostic::is_error) {
+            return Analysis {
+                diagnostics,
+                types: Some(types),
+                domains: Vec::new(),
+            };
+        }
+        let factory = || -> Box<dyn Solver> { unreachable!("analysis never solves") };
+        let mut sink = std::io::sink();
+        let mut interpreter = Interpreter::new(source, options, &types, &factory, &mut sink, None);
+        interpreter.analysis = Some(interp::AnalysisState::new(
+            std::time::Instant::now() + budget,
+        ));
+        let result = interpreter.run(&program);
+        diagnostics.append(&mut interpreter.warnings);
+        match result {
+            Err(error) if error.message == interp::ANALYSIS_TIMEOUT => {}
+            Err(error) => diagnostics.push(error),
+            Ok(()) => {}
+        }
+        let domains = interpreter
+            .analysis
+            .take()
+            .map(|state| state.finish(source))
+            .unwrap_or_default();
+        drop(interpreter);
+        Analysis {
+            diagnostics,
+            types: Some(types),
+            domains,
+        }
+    })
+}
+
 type Checked = (Program, TypeInfo, Vec<Diagnostic>);
 
 fn front_end(source: &SourceFile, options: &CompilerOptions) -> Result<Checked, Vec<Diagnostic>> {

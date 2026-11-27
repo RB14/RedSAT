@@ -149,20 +149,8 @@ pub(crate) fn solve(
     let mut magnitude = options.fallback_int_bits;
     loop {
         let (domains, unbounded) = final_domains(store, &ranges, &relevant, magnitude);
-        if let Some(&first) = unbounded.first() {
-            let unknown = &store.unknowns()[first];
-            if options.unbounded_ints == UnboundedInts::Error {
-                return Err(Diagnostic::error(
-                    unknown.span,
-                    format!("cannot infer a finite domain for `{}`", unknown.name),
-                )
-                .with_label("unbounded")
-                .with_note("required by the compiler option unbounded-ints = \"error\"")
-                .with_help(format!(
-                    "give it bounds, e.g. `var {}: int[0..=1000]`, or a constraint that limits it",
-                    unknown.name
-                )));
-            }
+        if !unbounded.is_empty() && options.unbounded_ints == UnboundedInts::Error {
+            return Err(unbounded_error(store, unbounded[0]));
         }
         let names: Vec<String> = unbounded
             .iter()
@@ -227,6 +215,62 @@ pub(crate) fn solve(
             }
         }
     }
+}
+
+/// The error for an unbounded integer under `unbounded-ints = "error"`.
+fn unbounded_error(store: &TermStore, index: usize) -> Diagnostic {
+    let unknown = &store.unknowns()[index];
+    Diagnostic::error(
+        unknown.span,
+        format!("cannot infer a finite domain for `{}`", unknown.name),
+    )
+    .with_label("unbounded")
+    .with_note("required by the compiler option unbounded-ints = \"error\"")
+    .with_help(format!(
+        "give it bounds, e.g. `var {}: int[0..=1000]`, or a constraint that limits it",
+        unknown.name
+    ))
+}
+
+/// The domains a `solve` would use, without solving: for editor tooling. Returns the domain of
+/// every relevant unknown (by index) and diagnostics about unbounded unknowns.
+pub(crate) fn infer_domains(
+    store: &TermStore,
+    constraints: &[Constraint],
+    projection: &[TermId],
+    objective: Option<TermId>,
+    options: &CompilerOptions,
+) -> (Vec<(usize, Interval)>, Vec<Diagnostic>) {
+    let required: Vec<TermId> = constraints.iter().map(|c| c.term).collect();
+    let Some(ranges) = domain::propagate(store, &required) else {
+        return (Vec::new(), Vec::new());
+    };
+    let mut roots = required;
+    roots.extend(projection);
+    roots.extend(objective);
+    let relevant = relevant_unknowns(store, &roots);
+    let (domains, unbounded) = final_domains(store, &ranges, &relevant, options.fallback_int_bits);
+    let mut diagnostics = Vec::new();
+    if let Some(&first) = unbounded.first() {
+        diagnostics.push(if options.unbounded_ints == UnboundedInts::Error {
+            unbounded_error(store, first)
+        } else {
+            let names: Vec<String> = unbounded
+                .iter()
+                .map(|&u| format!("`{}`", store.unknowns()[u].name))
+                .collect();
+            Diagnostic::warning(
+                store.unknowns()[first].span,
+                format!("could not infer bounds for {}", names.join(", ")),
+            )
+            .with_help("add bounds (e.g. `int[0..=1000]`) for a complete search")
+        });
+    }
+    let inferred = relevant
+        .into_iter()
+        .map(|index| (index, domains[index].clone()))
+        .collect();
+    (inferred, diagnostics)
 }
 
 /// The unknowns (by index) that the roots depend on.

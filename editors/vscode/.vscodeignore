@@ -1,5 +1,11 @@
-samples/**
+# Everything the extension needs at runtime is bundled into dist/extension.js (kept),
+# so sources, dependencies and build configuration stay out of the .vsix.
+src/**
 node_modules/**
-**/*.vsix
-**/*.map
+samples/**
+tsconfig.json
+package-lock.json
 .gitignore
+**/*.ts
+**/*.map
+**/*.vsix

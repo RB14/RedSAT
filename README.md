@@ -33,9 +33,11 @@ The language is specified in [`docs/design.md`](docs/design.md).
 | Phase | What                                                                                   | State     |
 |-------|----------------------------------------------------------------------------------------|-----------|
 | 0     | Boolean backbone: AIG circuits, CNF encoding, DIMACS, CaDiCaL backend, exact arithmetic | ✅ done   |
-| 1     | Language: `var`/`require`/`solve`, inferred integer widths, loops, symbolic `if`, `all`/`unique`/`minimize`, `redsat.toml` + strict mode, VS Code highlighting | ✅ done |
-| 2     | Language server: live diagnostics, autocomplete, hovers with inferred domains           | next      |
-| 3     | Arrays, functions, comprehensions, `all_different`, cardinality constraints             | planned   |
+| 1     | Language core: `var`/`require`/`solve`, inferred integer widths, loops, symbolic `if`, `all`/`unique`/`minimize`, `redsat.toml` + strict mode | ✅ done |
+| 2     | Language server: live diagnostics, autocomplete, hovers/inlay hints with inferred domains | ✅ done |
+| 3     | Arrays, functions, comprehensions, `all_different`, bounded `while`                     | ✅ done   |
+| 4     | Characters, strings, enums, structs, `/` `%` and bitwise operators on unknowns          | ✅ done   |
+| 5     | Explanations of "no solution", `--interactive`, binary-search optimization             | ✅ done   |
 
 ## Getting started
 
@@ -61,6 +63,7 @@ cargo install --path crates/redsat-cli     # puts `redsat` on your PATH
 redsat examples/pythagorean.rsat            # run a program (the default action)
 redsat examples/factor.rsat --stats         # …and show inferred domains, bit widths, CNF size
 redsat check examples/coins.rsat            # parse and type-check only
+redsat --interactive examples/n_queens.rsat # step through solutions: Enter / a(ll) / q(uit)
 redsat --strict examples/pell.rsat          # enable every strict check
 redsat dimacs problem.cnf                   # solve a raw DIMACS file (exit 10 = SAT, 20 = UNSAT)
 ```
@@ -69,16 +72,26 @@ Without installing, use `cargo run --release -p redsat-cli -- <args>`.
 
 ## Examples
 
-| Program                                                        | Shows                                                       |
-|----------------------------------------------------------------|-------------------------------------------------------------|
-| [`factor.rsat`](examples/factor.rsat)                          | running a multiplier backwards; `else` when there is no solution |
-| [`pythagorean.rsat`](examples/pythagorean.rsat)                | `solve all`, ranged types, updating variables in a solve body |
-| [`chickens_and_rabbits.rsat`](examples/chickens_and_rabbits.rsat) | bounds inferred from `a + b == 35`; `solve unique`        |
-| [`coins.rsat`](examples/coins.rsat)                            | `minimize`                                                  |
-| [`knights_and_knaves.rsat`](examples/knights_and_knaves.rsat)  | boolean logic with `iff`                                    |
-| [`bigger_of_two.rsat`](examples/bigger_of_two.rsat)            | an `if` whose condition depends on unknowns                 |
-| [`sums_of_two_squares.rsat`](examples/sums_of_two_squares.rsat) | projection: auxiliary unknowns that only need to exist     |
-| [`pell.rsat`](examples/pell.rsat)                              | unbounded integers and iterative deepening                  |
+| Program | Shows |
+|---|---|
+| [`factor.rsat`](examples/factor.rsat) | running a multiplier backwards; `else` when there is no solution |
+| [`sudoku.rsat`](examples/sudoku.rsat) | 2-D arrays, `all_different`, `solve unique` (solved and proven unique in ~30 ms) |
+| [`n_queens.rsat`](examples/n_queens.rsat) | `solve all` over an array (all 92 solutions), functions returning strings |
+| [`send_more_money.rsat`](examples/send_more_money.rsat) | the classic cryptarithm |
+| [`magic_square.rsat`](examples/magic_square.rsat) | comprehensions over rows, columns and diagonals |
+| [`graph_coloring.rsat`](examples/graph_coloring.rsat) | enums and structs |
+| [`knapsack.rsat`](examples/knapsack.rsat) | `maximize`, sums filtered by unknowns |
+| [`scheduling.rsat`](examples/scheduling.rsat) | structs with strings, functions, `minimize` the makespan |
+| [`palindromes.rsat`](examples/palindromes.rsat) | strings of unknown characters |
+| [`bits.rsat`](examples/bits.rsat) | bitwise operators and shifts |
+| [`digit_puzzle.rsat`](examples/digit_puzzle.rsat) | `while … bound`, `/` and `%` on unknowns |
+| [`pythagorean.rsat`](examples/pythagorean.rsat) | `solve all`, updating variables in a solve body |
+| [`chickens_and_rabbits.rsat`](examples/chickens_and_rabbits.rsat) | bounds inferred from `a + b == 35` |
+| [`coins.rsat`](examples/coins.rsat) | `minimize` |
+| [`knights_and_knaves.rsat`](examples/knights_and_knaves.rsat) | boolean logic with `iff` |
+| [`bigger_of_two.rsat`](examples/bigger_of_two.rsat) | an `if` whose condition depends on unknowns |
+| [`sums_of_two_squares.rsat`](examples/sums_of_two_squares.rsat) | projection: auxiliary unknowns that only need to exist |
+| [`pell.rsat`](examples/pell.rsat) | unbounded integers and iterative deepening |
 
 ## Compiler options
 
@@ -98,9 +111,15 @@ See [design §6.3](docs/design.md#63-compiler-options-redsattoml) for the detail
 
 ## Editor support
 
-[`editors/vscode/`](editors/vscode/) is a VS Code extension that provides syntax highlighting for
-`.rsat` files and for ```` ```rsat ```` code blocks in Markdown, plus snippets. See its README for
-installation.
+[`editors/vscode/`](editors/vscode/) is a VS Code extension. It provides:
+- syntax highlighting for `.rsat` files and for ```` ```rsat ```` blocks in Markdown;
+- snippets;
+- a language-server client for `redsat lsp`, which gives live diagnostics, autocomplete,
+  hovers and inlay hints with each unknown's inferred domain and bit width,
+  go-to-definition and an outline.
+
+The server is the `redsat` binary (`cargo install --path crates/redsat-cli`). See the
+extension's README for building and installing it.
 
 ## Repository layout
 
@@ -111,13 +130,14 @@ crates/
                     gadgets (IntVec), CircuitSolver (+ examples/factor.rs)
   redsat-lang/      lexer, parser, type inference, options, interpreter, domain inference,
                     bit-blasting and solving (+ golden tests in tests/programs/)
-  redsat-cli/       the `redsat` command-line tool
-editors/vscode/     VS Code extension: grammar, Markdown injection, snippets
+  redsat-lsp/       the language server behind `redsat lsp`
+  redsat-cli/       the `redsat` command-line tool (+ an end-to-end test of `redsat lsp`)
+editors/vscode/     VS Code extension: grammar, Markdown injection, snippets, LSP client
 examples/           example programs
 docs/design.md      language design, semantics, architecture and roadmap
 ```
 
-Dependencies point strictly downwards: `cli → lang → circuit → sat`.
+Dependencies point strictly downwards: `cli → lsp → lang → circuit → sat`.
 
 ## Testing
 

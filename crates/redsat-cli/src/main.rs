@@ -60,6 +60,12 @@ enum Command {
         #[command(flatten)]
         options: OptionArgs,
     },
+    /// Run the language server (LSP over stdin/stdout), as used by editors.
+    Lsp {
+        /// Accepted for compatibility with editors that pass it; stdio is the only transport.
+        #[arg(long, hide = true)]
+        stdio: bool,
+    },
     /// Solve a CNF formula in DIMACS format and print the answer in SAT Competition format.
     ///
     /// Exits with 10 when satisfiable and 20 when unsatisfiable, as SAT solvers do.
@@ -105,6 +111,9 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
         Some(Command::Dimacs { path }) => solve_dimacs(&path),
+        Some(Command::Lsp { .. }) => redsat_lsp::run_stdio()
+            .map(|()| ExitCode::SUCCESS)
+            .map_err(|error| error.to_string().into()),
         Some(Command::Check { file, options }) => check(&file, &options),
         None => run(
             &cli.file.expect("required by clap"),

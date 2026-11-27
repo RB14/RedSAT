@@ -14,9 +14,10 @@
 //!   every later effect of the function on the paths that already returned;
 //! - `while cond bound K` unrolls at most `K` iterations and requires the loop to finish.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::rc::Rc;
+use std::time::Instant;
 
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
@@ -156,6 +157,8 @@ pub(crate) struct Interpreter<'a> {
     /// The value of every term while a `solve` body runs.
     model: Option<Rc<Vec<Constant>>>,
     struct_depth: usize,
+    /// Set when the program is analysed for editor tooling instead of run.
+    pub(crate) analysis: Option<AnalysisState>,
     pub(crate) warnings: Vec<Diagnostic>,
     pub(crate) stats: Vec<SolveStats>,
 }
@@ -184,6 +187,7 @@ impl<'a> Interpreter<'a> {
             guards: Vec::new(),
             model: None,
             struct_depth: 0,
+            analysis: None,
             warnings: Vec::new(),
             stats: Vec::new(),
         }
@@ -221,6 +225,11 @@ impl<'a> Interpreter<'a> {
     }
 
     fn exec(&mut self, stmt: &Stmt) -> Result<Flow> {
+        if let Some(analysis) = &self.analysis {
+            if Instant::now() > analysis.deadline {
+                return Err(Diagnostic::error(stmt.span, ANALYSIS_TIMEOUT));
+            }
+        }
         match &stmt.kind {
             StmtKind::Var(decl) => self.exec_var(decl)?,
             StmtKind::Assign { target, value } => self.exec_assign(target, value)?,
@@ -677,6 +686,25 @@ impl<'a> Interpreter<'a> {
         let mut projection = Vec::new();
         for (_, value) in &targets {
             leaves(value, &mut projection);
+        }
+
+        if self.analysis.is_some() {
+            // Editor analysis: infer the domains, but never call the SAT solver.
+            let objective = objective.map(|(_, term)| term);
+            let (domains, diagnostics) = solve::infer_domains(
+                &self.store,
+                &self.constraints,
+                &projection,
+                objective,
+                self.options,
+            );
+            self.warnings.extend(diagnostics);
+            if let Some(analysis) = self.analysis.as_mut() {
+                for (index, domain) in domains {
+                    analysis.record(&self.store, index, domain);
+                }
+            }
+            return Ok(());
         }
 
         // The store and constraints are lent to the solver while solve bodies run, which only
@@ -2431,5 +2459,64 @@ fn explanation(solve: Span, conflict: &[Span]) -> Diagnostic {
                     note.with_related(*span, "")
                 })
         }
+    }
+}
+
+/// The message of the error that stops an analysis that ran out of time.
+pub(crate) const ANALYSIS_TIMEOUT: &str = "analysis time limit reached";
+
+/// What editor analysis collects: the inferred domain of every unknown, grouped by the
+/// declaration that created it.
+pub(crate) struct AnalysisState {
+    pub(crate) deadline: Instant,
+    seen: HashSet<usize>,
+    groups: Vec<(Span, Sort, Interval, usize)>,
+}
+
+impl AnalysisState {
+    pub(crate) fn new(deadline: Instant) -> Self {
+        Self {
+            deadline,
+            seen: HashSet::new(),
+            groups: Vec::new(),
+        }
+    }
+
+    fn record(&mut self, store: &TermStore, index: usize, domain: Interval) {
+        if !self.seen.insert(index) {
+            return;
+        }
+        let unknown = &store.unknowns()[index];
+        match self
+            .groups
+            .iter_mut()
+            .find(|(span, ..)| *span == unknown.span)
+        {
+            Some((_, _, hull, count)) => {
+                *hull = hull.hull(&domain);
+                *count += 1;
+            }
+            None => self.groups.push((unknown.span, unknown.sort, domain, 1)),
+        }
+    }
+
+    /// The inferred domains, one per declaration.
+    pub(crate) fn finish(self, source: &SourceFile) -> Vec<crate::InferredDomain> {
+        self.groups
+            .into_iter()
+            .map(|(span, sort, domain, unknowns)| {
+                let (domain, width) = match sort {
+                    Sort::Bool => ("bool".to_string(), 1),
+                    Sort::Int => (domain.to_string(), crate::blast::layout_of(&domain).width),
+                };
+                crate::InferredDomain {
+                    span,
+                    name: source.slice(span).to_string(),
+                    domain,
+                    width,
+                    unknowns,
+                }
+            })
+            .collect()
     }
 }

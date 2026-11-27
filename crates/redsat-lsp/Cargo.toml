@@ -1,0 +1,17 @@
+[package]
+name = "redsat-lsp"
+description = "The RedSAT language server: diagnostics, completion, hovers with inferred domains"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+redsat-lang.workspace = true
+lsp-server.workspace = true
+lsp-types.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

@@ -1,24 +1,44 @@
 {
   "name": "redsat",
   "displayName": "RedSAT",
-  "description": "Syntax highlighting, editor configuration and snippets for the RedSAT language (.rsat).",
-  "version": "0.1.0",
+  "description": "Syntax highlighting, snippets and a language server client (diagnostics, completion, hover, go to definition, outline, inlay hints) for the RedSAT language (.rsat).",
+  "version": "0.2.0",
   "publisher": "redsat",
   "private": true,
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.91.0"
   },
   "categories": [
     "Programming Languages",
-    "Snippets"
+    "Snippets",
+    "Linters"
   ],
   "keywords": [
     "redsat",
     "rsat",
     "sat",
     "constraint",
-    "solver"
+    "solver",
+    "lsp"
   ],
+  "extensionKind": [
+    "workspace",
+    "ui"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:rsat"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In Restricted Mode, the language server is started only from the user-level `redsat.server.path` / `redsat.server.useWsl` settings; workspace values are ignored.",
+      "restrictedConfigurations": [
+        "redsat.server.path",
+        "redsat.server.useWsl"
+      ]
+    }
+  },
   "contributes": {
     "languages": [
       {
@@ -55,6 +75,72 @@
         "language": "rsat",
         "path": "./snippets/rsat.json"
       }
-    ]
+    ],
+    "commands": [
+      {
+        "command": "redsat.restartServer",
+        "title": "Restart Language Server",
+        "category": "RedSAT"
+      }
+    ],
+    "configuration": {
+      "title": "RedSAT",
+      "properties": {
+        "redsat.server.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Start the RedSAT language server (`redsat lsp`) for diagnostics, completion, hover, go to definition, outline and inlay hints. Syntax highlighting and snippets work either way."
+        },
+        "redsat.server.path": {
+          "type": "string",
+          "default": "redsat",
+          "scope": "machine-overridable",
+          "markdownDescription": "The `redsat` executable, invoked with the argument `lsp`. A bare name is looked up on `PATH`; an absolute path is used as is. When the server runs through WSL (see `#redsat.server.useWsl#`), this is resolved inside WSL by a login shell, so `~/.cargo/bin` is on `PATH` and a leading `~/` is expanded."
+        },
+        "redsat.server.useWsl": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ],
+          "enumDescriptions": [
+            "On Windows, run the server through WSL when `redsat.server.path` cannot be started directly.",
+            "On Windows, always run the server through WSL.",
+            "Never use WSL."
+          ],
+          "default": "auto",
+          "scope": "machine-overridable",
+          "markdownDescription": "Whether a local Windows window runs the server through WSL (`wsl.exe -e bash -lc \"exec <path> lsp\"`). Ignored on Linux and macOS, including WSL remote windows, where the server always runs directly."
+        },
+        "redsat.trace.server": {
+          "type": "string",
+          "enum": [
+            "messages",
+            "verbose"
+          ],
+          "default": "messages",
+          "markdownDescription": "Detail of the LSP message trace. Tracing is switched on by setting the log level of the *RedSAT Language Server* output channel to **Trace** (gear icon in the Output panel, or *Developer: Set Log Level…*)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "bundle": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --platform=node --format=cjs --target=node20 --external:vscode",
+    "build": "npm run bundle -- --sourcemap",
+    "watch": "npm run bundle -- --sourcemap --watch",
+    "typecheck": "tsc --noEmit",
+    "vscode:prepublish": "npm run typecheck && npm run bundle -- --minify",
+    "package": "vsce package --allow-missing-repository --skip-license --no-dependencies"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@types/vscode": "~1.91.0",
+    "@vscode/vsce": "^4.1.1",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
   }
 }

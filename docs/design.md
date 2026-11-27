@@ -646,17 +646,36 @@ Programs should be pleasant to read and write in an editor. The extension lives 
    - `language-configuration.json` with comment toggling, bracket matching, auto-closing pairs
      and indentation rules.
 
-   It installs from a locally built `.vsix`. Being purely declarative, it works in local Windows
-   windows and in WSL remote windows alike. A unit test in `redsat-lang` checks that the
-   grammar's keyword lists match the lexer's keyword table, so the two cannot drift.
-2. **Language server (Phase 2).** `redsat lsp` speaks the Language Server Protocol and powers
-   the real editor intelligence:
-   - live diagnostics while typing (parse, type and strict-mode errors);
-   - **autocomplete** for keywords, variables and functions in scope, types after `:`, and
-     solve modifiers;
-   - hovers and inlay hints showing each variable's **inferred domain and bit width**
-     (`x: int[2..=500018000049] · 39 bits`);
-   - go-to-definition, and a code lens with the CNF size of each `solve`.
+   A unit test in `redsat-lang` checks that the grammar's keyword lists match the lexer's
+   keyword table, so the two cannot drift.
+2. **Language server (Phase 2).** `redsat lsp` (crate `redsat-lsp`) speaks the Language Server
+   Protocol over stdio. The extension's client starts it automatically.
+
+   **What it does.** On every change, the document goes through
+   [`redsat_lang::analyze`](../crates/redsat-lang/src/lib.rs): it is parsed, type-checked and
+   elaborated exactly as a run would elaborate it. At each `solve`, analysis stops after domain
+   inference and never calls the SAT solver. Elaboration gives up after 400 ms, so heavy
+   programs keep the editor responsive. This powers:
+   - **live diagnostics**: syntax, type and strict-mode errors, plus errors found while
+     elaborating, such as an out-of-range index or a loop bound that depends on unknowns;
+   - **autocomplete**:
+     - variables visible at the cursor, functions, enums, structs and built-ins;
+     - types after `:`, enum variants after `Color.`, fields after `p.`;
+     - `solve` modifiers;
+     - while the text is broken mid-edit, completion keeps using the symbols of the last
+       version that type-checked;
+   - **hovers** with the declaration and the unknown's **inferred domain and bit width**
+     (`unknown · inferred domain [34, 130158467] · 27 bits`);
+   - **inlay hints** with the same information next to every unknown declaration;
+   - **go-to-definition** and the **document outline**.
+
+   **Where the server runs.** The extension runs on the workspace side: in a WSL remote window
+   it runs inside WSL, next to the Linux `redsat` binary. In a local Windows window it starts
+   the server through `wsl.exe` when no Windows `redsat` is on the PATH. URIs that come through
+   that bridge (`file:///c%3A/…`, `file://wsl.localhost/…`) are mapped to Linux paths so that
+   `redsat.toml` is still found.
+
+   Later: a code lens with the CNF size of each `solve`.
 
 ### 6.3 Compiler options: `redsat.toml`
 
@@ -714,7 +733,7 @@ var n = 42              // ok: the initializer determines the type
 |-------|-----------------------------------------------------------------------------------------------|---------------------------------|
 | 0 ✅  | AIG, Tseitin/PG encoder, DIMACS I/O, `Solver` trait + CaDiCaL, exact unsigned gadgets          | factoring via hand-built circuit |
 | 1 ✅  | lexer, parser, type inference, `var`/`require`/`solve`/`print`, bool + int with inferred widths, signed gadgets, compile-time `for`/`if`, **symbolic `if`** (pulled forward), `solve all/unique/limit`, **`minimize`/`maximize`** (pulled forward), `redsat.toml` + strict mode, VS Code grammar + Markdown fences + snippets | factoring, triples, logic puzzles in `.rsat` |
-| 2     | language server: live diagnostics, autocomplete, hovers with inferred domains and widths       | editor intelligence             |
+| 2 ✅  | language server: live diagnostics, autocomplete, hovers and inlay hints with inferred domains and widths, definitions, outline; VS Code client | editor intelligence |
 | 3 ✅  | arrays (unknown indices too), functions with early returns, comprehensions, built-ins (`all_different`, `sum`, `count`, …), `in`, `if` expressions, bounded `while` | N-Queens, cryptarithms, Sudoku, magic squares |
 | 4 ✅  | `/` `%` on unknowns, bitwise ops, chars, strings with unknown lengths, enums, structs           | palindromes, graph colouring, scheduling |
 | 5 ✅  | interactive mode, explanations of "no solution" (minimised unsat cores), binary-search optimization | debuggable models               |

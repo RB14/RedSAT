@@ -13,7 +13,11 @@ path = "src/main.rs"
 [dependencies]
 redsat-sat = { workspace = true, features = ["cadical"] }
 redsat-lang.workspace = true
+redsat-lsp.workspace = true
 clap.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

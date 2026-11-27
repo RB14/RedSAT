@@ -270,13 +270,21 @@ function showStats(result) {
     return;
   }
   const sum = (key) => solves.reduce((total, solve) => total + solve[key], 0);
-  $('stats').textContent = [
-    plural(solves.length, 'solve'),
-    plural(Math.max(...solves.map((solve) => solve.decisionBits)), 'decision bit'),
-    plural(sum('cnfVars'), 'variable'),
-    plural(sum('cnfClauses'), 'clause'),
-    plural(sum('satCalls'), 'SAT call'),
-  ].join(' · ');
+  // One item per figure, each kept on one line: when space runs short, whole items wrap.
+  const items = [
+    [solves.length, 'solve', 'solves', 'How many solve statements ran'],
+    [Math.max(...solves.map((solve) => solve.decisionBits)), 'decision bit', 'decision bits', 'Bits of the unknowns the solver had to decide (the search space has 2^n points)'],
+    [sum('cnfVars'), 'variable', 'variables', 'Variables in the formula given to the SAT solver'],
+    [sum('cnfClauses'), 'clause', 'clauses', 'Clauses in the formula given to the SAT solver'],
+    [sum('satCalls'), 'SAT call', 'SAT calls', 'How many times the SAT solver was called'],
+  ];
+  $('stats').replaceChildren(
+    ...items.map(([count, one, many, title]) => {
+      const item = Object.assign(document.createElement('span'), { className: 'stat', title });
+      item.append(Object.assign(document.createElement('b'), { textContent: count.toLocaleString() }), ` ${count === 1 ? one : many}`);
+      return item;
+    }),
+  );
 }
 
 // --- running --------------------------------------------------------------------------------
@@ -294,7 +302,7 @@ function setRunning(value) {
  * Runs the program with every solver at once, one worker each. The first to finish wins: its
  * output is shown and the others are stopped. Resolves to {result, solver}.
  */
-function race(request, onStatus) {
+function race(request) {
   const members = raceMembers();
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -307,7 +315,6 @@ function race(request, onStatus) {
           {
             onOutput: (text) => output.push(['out', text]),
             onTrace: (text) => output.push(['trace', `${text}\n`]),
-            onStatus: (text) => onStatus(`${solver.label}: ${text}`),
           },
         )
         .then(({ result }) => {
@@ -343,6 +350,7 @@ async function runProgram() {
   tick();
   const timer = setInterval(tick, 100);
   const onStatus = (text) => {
+    if (!running) return; // a late message from a worker that has already lost or stopped
     status = text.replace(/…$/, '');
     tick();
   };
@@ -350,7 +358,7 @@ async function runProgram() {
     const request = { type: 'run', name: doc.fileName, source: editor.text, config: config(), verbose: store.settings.verbose };
     let result;
     if (racing) {
-      ({ result, solver } = await race(request, onStatus));
+      ({ result, solver } = await race(request));
     } else {
       ({ result } = await runner(0).request(
         { ...request, solver: solver.id },

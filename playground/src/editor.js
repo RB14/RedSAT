@@ -100,7 +100,6 @@ export function createEditor({ parent, words, analyze, onRun, onChange }) {
         syntaxHighlighting(highlightStyle),
         indentUnit.of('    '),
         theme,
-        EditorView.lineWrapping,
         EditorView.contentAttributes.of({ autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' }),
         keymap.of([
           { key: 'Mod-Enter', run: () => (onRun(), true), preventDefault: true },

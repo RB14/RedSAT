@@ -794,15 +794,14 @@ fn encode_by_part(
     debug_assert_eq!(required.len(), constraints.len());
     let mut claimed = vec![false; cs.aig().num_nodes()];
     // Claims `edges`, requires them and returns what that added: (inputs, gates, clauses).
-    let encode =
-        |cs: &mut CircuitSolver<Box<dyn Solver>>, edges: &[Edge], claimed: &mut [bool]| {
-            let (gates, inputs) = claim(cs.aig(), edges, claimed);
-            let before = cs.solver().num_clauses();
-            for &edge in edges {
-                cs.require(edge);
-            }
-            (inputs, gates, cs.solver().num_clauses() - before)
-        };
+    let encode = |cs: &mut CircuitSolver<Box<dyn Solver>>, edges: &[Edge], claimed: &mut [bool]| {
+        let (gates, inputs) = claim(cs.aig(), edges, claimed);
+        let before = cs.solver().num_clauses();
+        for &edge in edges {
+            cs.require(edge);
+        }
+        (inputs, gates, cs.solver().num_clauses() - before)
+    };
     let charge = |cost: &mut Cost, (inputs, gates, clauses): (usize, usize, usize)| {
         cost.inputs += inputs;
         cost.gates += gates;

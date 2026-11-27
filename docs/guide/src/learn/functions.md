@@ -226,9 +226,21 @@ print sign(-3)
 42
 ```
 
-Your version replaces the standard one everywhere, including inside other standard library
-functions that call it. For example, the standard `is_letter` calls `is_lower`, so redefining
-`is_lower` also changes `is_letter`.
+Your version replaces the standard one in your code only. Shadowing is *lexical*: the
+standard library's own functions keep calling the library's versions. For example, the
+standard `is_letter` calls `is_lower`, and redefining `is_lower` does not change `is_letter`:
+
+```rsat
+fn is_lower(c: char) -> bool {
+    return false
+}
+
+print is_lower('a'), is_letter('a')
+```
+
+```text
+false true
+```
 
 The built-in functions such as `sum` and `len` are part of the language itself, and their names
 cannot be reused for functions.

@@ -113,6 +113,17 @@ fn open_brackets(text: &str) -> i32 {
     depth
 }
 
+/// Whether `input` is a single function call used as a statement.
+fn is_call(input: &str) -> bool {
+    let source = redsat_lang::SourceFile::new("input.rsat", input);
+    redsat_lang::parser::parse(&source).is_ok_and(|program| {
+        matches!(program.stmts.as_slice(), [statement] if matches!(
+            &statement.kind,
+            redsat_lang::ast::StmtKind::Expr(expr) if matches!(expr.kind, redsat_lang::ast::ExprKind::Call(..))
+        ))
+    })
+}
+
 /// Runs the history plus `input`; on success shows the new output and keeps `input`.
 fn evaluate(
     history: &mut Vec<String>,
@@ -123,6 +134,16 @@ fn evaluate(
     let previous = history.concat();
     let (before, _) = execute(&previous, options, factory);
     let attempt = format!("{previous}{input}");
+    // A call on its own line is printed when it returns a value (`sorted([3, 1, 2])`).
+    if is_call(input) {
+        let printed = format!("print {}\n", input.trim());
+        let (output, print_errors) = execute(&format!("{previous}{printed}"), options, factory);
+        if print_errors.is_empty() {
+            print!("{}", output.get(before.len()..).unwrap_or(""));
+            history.push(printed);
+            return;
+        }
+    }
     let (output, errors) = execute(&attempt, options, factory);
     let accepted = if errors.is_empty() {
         Some((input.to_string(), output))

@@ -59,6 +59,7 @@ pub fn parse_from(source: &SourceFile, first_decl: usize) -> Result<Program> {
     Ok(Program {
         stmts,
         num_decls: parser.next_decl,
+        library: None,
     })
 }
 

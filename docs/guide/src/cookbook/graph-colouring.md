@@ -50,6 +50,12 @@ QLD: Red
 NSW: Green
 VIC: Red
 TAS: Red
+warning: `color[6]` is unconstrained: no requirement mentions it
+  --> main.rsat:10:5
+   |
+10 | var color: [Color; len(regions)]
+   |     ^^^^^
+   = note: any value in its domain is a solution, so the value shown is arbitrary
 ```
 
 The data (regions and borders) is separate from the model (the loop over borders), so colouring
@@ -92,6 +98,18 @@ print "{count} colourings with WA red"
 ```text
 18 colourings
 6 colourings with WA red
+warning: `color[6]` is unconstrained: no requirement mentions it
+ --> main.rsat:9:5
+  |
+9 | var color: [Color; len(regions)]
+  |     ^^^^^
+  = note: any value in its domain is a solution, so the value shown is arbitrary
+warning: `color[6]` is unconstrained: no requirement mentions it
+ --> main.rsat:9:5
+  |
+9 | var color: [Color; len(regions)]
+  |     ^^^^^
+  = note: any value in its domain is a solution, so the value shown is arbitrary
 ```
 
 (The second `solve` sees the first one's requirements plus the new one: constraints

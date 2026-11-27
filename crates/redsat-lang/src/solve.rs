@@ -287,6 +287,36 @@ pub(crate) fn solve(
         ));
     };
 
+    // Solve targets that no requirement (or objective) mentions can take any value of their
+    // domain.
+    let mut mentioned = required.clone();
+    mentioned.extend(request.objective.map(|(_, term)| term));
+    let constrained: std::collections::HashSet<usize> =
+        relevant_unknowns(store, &mentioned).into_iter().collect();
+    for &target in &request.projection {
+        let unknowns = relevant_unknowns(store, &[target]);
+        if let Some(&first) = unknowns.first() {
+            if unknowns
+                .iter()
+                .all(|unknown| !constrained.contains(unknown))
+            {
+                let unknown = &store.unknowns()[first];
+                warnings.push(
+                    Diagnostic::warning(
+                        unknown.span,
+                        format!(
+                            "`{}` is unconstrained: no requirement mentions it",
+                            unknown.name
+                        ),
+                    )
+                    .with_note(
+                        "any value in its domain is a solution, so the value shown is arbitrary",
+                    ),
+                );
+            }
+        }
+    }
+
     let mut roots = required.clone();
     roots.extend(&request.projection);
     roots.extend(request.objective.map(|(_, term)| term));

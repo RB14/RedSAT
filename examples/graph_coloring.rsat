@@ -1,7 +1,8 @@
 // Graph coloring: give every region a color so that neighbouring regions differ.
 //
 // The seven states and territories of mainland Australia and Tasmania, with their borders.
-// Enums name the colors; a struct describes each border.
+// Enums name the colors; a struct describes each border. Tasmania (TAS) is an island: no
+// border constrains its color, and the compiler warns that its value is arbitrary.
 
 enum Color { Red, Green, Blue }
 struct Border { a: int, b: int }
@@ -32,3 +33,9 @@ solve color {
 // NSW: Green
 // VIC: Red
 // TAS: Red
+// warning: `color[6]` is unconstrained: no requirement mentions it
+//   --> graph_coloring.rsat:16:5
+//    |
+// 16 | var color: [Color; len(regions)]
+//    |     ^^^^^
+//    = note: any value in its domain is a solution, so the value shown is arbitrary

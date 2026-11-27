@@ -1,0 +1,6 @@
+// Shadowing is lexical: your `is_lower` replaces the standard library's in your code, while the
+// library's own functions (here `is_letter`) keep using the library's version.
+fn is_lower(c: char) -> bool {
+    return false
+}
+print is_lower('a'), is_letter('a')

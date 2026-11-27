@@ -17,17 +17,16 @@ x = 7, y = 3
 x = 8, y = 2
 rsat> 2 ^ 100
 1267650600228229401496703205376
-rsat> print sorted([3, 1, 2])
+rsat> sorted([3, 1, 2])
 [1, 2, 3]
 rsat> :quit
 ```
 
 A few things to know:
 
-- **A bare expression is printed**, as if you had written `print` in front of it. One
-  exception: a function call on its own, like `sorted([3, 1, 2])`, is a valid statement (it
-  calls the function for its effects), so it is run but not printed. Write `print` in front to
-  see its value.
+- **A bare expression is printed**, as if you had written `print` in front of it. That
+  includes a function call on its own line, like `sorted([3, 1, 2])`, when the function returns
+  a value; a function that returns nothing is just run.
 - **Blocks can span several lines.** Input continues (with a `...` prompt) while a bracket is
   open, so you can type a `solve` body, an `if` or a function over several lines.
 - **Mistakes are not kept.** An input with an error is reported and dropped; the program stays as

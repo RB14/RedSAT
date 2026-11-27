@@ -36,9 +36,8 @@ Which variable declarations need a type annotation.
   TypeScript's `noImplicitAny`.
 - `"all"`: every `var` needs a type, even `var n: int = 42`.
 
-> **Known issue:** in the current version, `"all"` also checks the variables inside the
-> standard library's own functions, which are not annotated, so it rejects every program. Use
-> `"unknowns"` (the strict-mode setting) until this is fixed.
+These checks apply to your code (and the files it imports), not to the standard library's own
+functions.
 
 ```rsat,error,explicit-types=unknowns
 var x, y

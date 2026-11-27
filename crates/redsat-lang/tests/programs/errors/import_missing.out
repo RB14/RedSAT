@@ -1,4 +1,4 @@
-error: cannot find `nowhere.rsat`: No such file or directory (os error 2)
+error: cannot find `nowhere.rsat`: no such file
  --> import_missing.rsat:1:1
   |
 1 | import "nowhere.rsat"

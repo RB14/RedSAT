@@ -2036,7 +2036,7 @@ impl<'a> Interpreter<'a> {
     fn unconditional(items: Vec<Item>, span: Span, what: &str) -> Result<Vec<Value>> {
         if items.iter().any(|item| item.cond.is_some()) {
             return Err(Diagnostic::error(span, format!("{what} cannot filter on unknowns: its length would depend on them"))
-                .with_help("aggregate with `sum`, `count`, `all` or `any`, or move the condition into the element"));
+                .with_help("aggregate with `sum`, `count`, `all`, `any`, `len` or `all_different`, or move the condition into the element"));
         }
         Ok(items.into_iter().map(|item| item.value).collect())
     }

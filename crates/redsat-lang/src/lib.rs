@@ -20,6 +20,7 @@ pub mod ir;
 pub mod lexer;
 pub mod load;
 pub mod parser;
+mod rename;
 pub mod signatures;
 mod solve;
 pub mod source;

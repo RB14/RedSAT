@@ -467,8 +467,9 @@ solve [all | unique] <vars> [limit K] [minimize <expr> | maximize <expr>] [{ bod
 - **Interactive iteration.** `redsat prog.rsat --interactive` pauses after each solution of
   every `solve` (including plain ones): Enter shows the next solution, `a` shows all remaining
   ones, and `q` moves on.
-- **Don't-cares.** If a listed variable is not constrained at all, the solver picks an
-  arbitrary value; RedSAT flags it as *unconstrained* in the default output.
+- **Don't-cares.** If a listed variable is not constrained at all (no requirement or
+  objective mentions it), the solver picks an arbitrary value, and RedSAT warns that it is
+  *unconstrained*.
 - **Several `solve` statements.** Constraints accumulate: each `solve` sees *everything*
   required so far, not just the requirements written since the previous `solve`. Concrete code
   between solves can therefore drive the solver, e.g. a puzzle generator that removes clues as

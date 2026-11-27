@@ -161,6 +161,7 @@ impl TypeInfo {
 #[must_use]
 pub fn check(program: &Program, options: &CompilerOptions) -> (TypeInfo, Vec<Diagnostic>) {
     let mut checker = Checker {
+        library: program.library,
         options,
         vars: Vec::new(),
         decls: vec![None; program.num_decls],
@@ -223,6 +224,8 @@ struct Signature {
 }
 
 struct Checker<'a> {
+    /// The standard library's source range (exempt from `explicit-types`).
+    library: Option<Span>,
     options: &'a CompilerOptions,
     /// Inference variables: `Some(ty)` once bound.
     vars: Vec<Option<Ty>>,
@@ -789,7 +792,10 @@ impl Checker<'_> {
                 ExplicitTypes::Unknowns => decl.init.is_none(),
                 ExplicitTypes::All => true,
             };
-            if needs_annotation && annotated.is_none() {
+            let in_library = self.library.is_some_and(|library| {
+                library.start <= name.span.start && name.span.end <= library.end
+            });
+            if needs_annotation && annotated.is_none() && !in_library {
                 let example = if decl.init.is_some() {
                     "var n: int = 42"
                 } else {

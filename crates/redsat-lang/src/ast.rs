@@ -13,6 +13,9 @@ pub struct Program {
     pub stmts: Vec<Stmt>,
     /// The number of variable declarations ([`DeclId`]s are `0..num_decls`).
     pub num_decls: usize,
+    /// Where the standard library prelude lies, if it was loaded. Your compiler options (such
+    /// as `explicit-types`) do not apply to it.
+    pub library: Option<Span>,
 }
 
 /// Identifies one declared variable name (`var x, y` declares two).

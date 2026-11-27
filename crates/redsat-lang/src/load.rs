@@ -7,7 +7,9 @@
 //! relative to the file that imports them. A function you define (in the main file or an
 //! imported one) shadows a prelude function with the same name.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use crate::ast::{Program, Stmt, StmtKind};
 use crate::diagnostic::Diagnostic;
@@ -60,8 +62,11 @@ pub(crate) fn load(main: &SourceFile) -> (SourceMap, Result<Program, Vec<Diagnos
             Ok(canonical) => canonical,
             Err(error) => {
                 errors.push(
-                    Diagnostic::error(span, format!("cannot find `{target}`: {error}"))
-                        .with_label("imported here"),
+                    Diagnostic::error(
+                        span,
+                        format!("cannot find `{target}`: {}", describe_io(&error)),
+                    )
+                    .with_label("imported here"),
                 );
                 continue;
             }
@@ -75,7 +80,7 @@ pub(crate) fn load(main: &SourceFile) -> (SourceMap, Result<Program, Vec<Diagnos
             Err(error) => {
                 errors.push(Diagnostic::error(
                     span,
-                    format!("cannot read `{target}`: {error}"),
+                    format!("cannot read `{target}`: {}", describe_io(&error)),
                 ));
                 continue;
             }
@@ -111,30 +116,57 @@ pub(crate) fn load(main: &SourceFile) -> (SourceMap, Result<Program, Vec<Diagnos
     }
 
     stmts.extend(main_program.stmts);
-    // Your own functions shadow the prelude's: adding to the standard library never breaks an
-    // existing program.
-    let own: Vec<String> = stmts
+    // Your own functions shadow the prelude's, so adding to the standard library never breaks
+    // an existing program. Shadowing is lexical: the library's own functions keep calling the
+    // library's versions, which are renamed to names you cannot write.
+    let own: HashMap<String, String> = stmts
         .iter()
         .filter(|stmt| !prelude.contains(stmt.span.start))
         .filter_map(|stmt| match &stmt.kind {
-            StmtKind::Fn(decl) => Some(decl.name.name.clone()),
+            StmtKind::Fn(decl) => {
+                Some((decl.name.name.clone(), format!("std::{}", decl.name.name)))
+            }
             _ => None,
         })
         .collect();
-    stmts.retain(|stmt| match &stmt.kind {
-        StmtKind::Fn(decl) => !(prelude.contains(stmt.span.start) && own.contains(&decl.name.name)),
-        _ => true,
-    });
+    if !own.is_empty() {
+        for stmt in stmts
+            .iter_mut()
+            .filter(|stmt| prelude.contains(stmt.span.start))
+        {
+            if let StmtKind::Fn(decl) = &mut stmt.kind {
+                let decl = Rc::make_mut(decl);
+                if let Some(renamed) = own.get(&decl.name.name) {
+                    decl.name.name.clone_from(renamed);
+                }
+                crate::rename::calls_in_block(&mut decl.body, &own);
+            }
+        }
+    }
+    let library = Some(Span::new(
+        prelude.base(),
+        prelude.base() + prelude.text().len(),
+    ));
     if errors.is_empty() {
         (
             sources,
             Ok(Program {
                 stmts,
                 num_decls: next_decl,
+                library,
             }),
         )
     } else {
         (sources, Err(errors))
+    }
+}
+
+/// An I/O error without platform-specific wording (such as "os error 2").
+fn describe_io(error: &std::io::Error) -> String {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => "no such file".into(),
+        std::io::ErrorKind::PermissionDenied => "permission denied".into(),
+        kind => kind.to_string(),
     }
 }
 

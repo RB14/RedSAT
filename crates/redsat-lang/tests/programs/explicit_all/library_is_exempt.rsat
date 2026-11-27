@@ -1,0 +1,4 @@
+// `explicit-types = "all"` applies to your code only: the standard library is exempt.
+var n: int[1000..=9999]
+require digit_sum(n, 4) == 30 and is_permutation(digits(n, 4), [9, 9, 6, 6])
+solve n

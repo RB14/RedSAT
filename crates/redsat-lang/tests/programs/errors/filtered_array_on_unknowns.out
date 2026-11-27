@@ -3,4 +3,4 @@ error: an array comprehension cannot filter on unknowns: its length would depend
   |
 2 | var chosen = [i for i in 0..3 if take[i]]
   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  = help: aggregate with `sum`, `count`, `all` or `any`, or move the condition into the element
+  = help: aggregate with `sum`, `count`, `all`, `any`, `len` or `all_different`, or move the condition into the element

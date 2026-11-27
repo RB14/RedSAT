@@ -14,17 +14,29 @@
     <link rel="stylesheet" href="style.css" />
     <script>
       // A service worker adds the headers that make the page cross-origin isolated (GitHub Pages
-      // cannot) and caches the WebAssembly modules; see sw.js. The page reloads once to become
+      // cannot) and keeps an offline copy of the playground; see sw.js. The page reloads once to become
       // isolated; without service workers everything still works, Stop just restarts a worker.
       if ('serviceWorker' in navigator && window.isSecureContext) {
-        navigator.serviceWorker.register('sw.js').then(() => {
-          if (window.crossOriginIsolated || sessionStorage.getItem('redsat.isolating')) return;
-          const reload = () => {
+        // A new version of the playground took over this open page (after a deploy): reload, so
+        // that every file comes from that version. At most once every 10 seconds, so never a loop.
+        const startedWith = navigator.serviceWorker.controller;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (!startedWith) return; // the first visit, handled below
+          const last = Number(sessionStorage.getItem('redsat.updated') ?? 0);
+          if (Date.now() - last < 10000) return;
+          sessionStorage.setItem('redsat.updated', String(Date.now()));
+          location.reload();
+        });
+        // Controlled but not yet isolated (the first visit): reload once per session to become so.
+        navigator.serviceWorker.register('sw.js').then(async () => {
+          await navigator.serviceWorker.ready;
+          const isolate = () => {
+            if (window.crossOriginIsolated || sessionStorage.getItem('redsat.isolating')) return;
             sessionStorage.setItem('redsat.isolating', '1');
             location.reload();
           };
-          if (navigator.serviceWorker.controller) reload();
-          else navigator.serviceWorker.addEventListener('controllerchange', reload, { once: true });
+          if (navigator.serviceWorker.controller) isolate();
+          else navigator.serviceWorker.addEventListener('controllerchange', isolate, { once: true });
         });
       }
     </script>
@@ -70,6 +82,11 @@
       <button role="tab" data-tab-target="code">Code</button>
       <button role="tab" data-tab-target="output">Output <span id="output-dot" class="dot" hidden></span></button>
     </nav>
+
+    <section id="loading" class="loading" role="status" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="loading-text">Loading the compiler…</p>
+    </section>
 
     <main id="workspace" class="workspace">
       <section class="pane editor-pane" aria-label="Program">

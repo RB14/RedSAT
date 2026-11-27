@@ -497,6 +497,17 @@ function setupMenu() {
 
 // --- start-up -------------------------------------------------------------------------------
 
+/** Shows why the playground could not start, with a way out. */
+function failedToStart(error) {
+  console.error(error);
+  const panel = $('loading');
+  panel.classList.add('failed');
+  $('loading-text').textContent = `The playground could not start: ${error?.message ?? error}`;
+  const reload = Object.assign(document.createElement('button'), { className: 'primary', textContent: 'Reload' });
+  reload.addEventListener('click', () => location.reload());
+  if (!panel.querySelector('button')) panel.append(reload);
+}
+
 async function start() {
   // iOS zooms into text fields with small fonts as they get focus; it still allows pinch zoom.
   if (/iP(hone|ad|od)/.test(navigator.userAgent)) {
@@ -553,7 +564,7 @@ async function start() {
       fetch('examples.json').then((response) => response.json()),
     ]);
   } catch (error) {
-    setStatus('error', `✗ Could not load the compiler: ${error.message}`);
+    failedToStart(error);
     return;
   }
   $('version').textContent = `RedSAT ${hello.version}`;
@@ -587,4 +598,4 @@ async function start() {
   });
 }
 
-start();
+start().catch(failedToStart);

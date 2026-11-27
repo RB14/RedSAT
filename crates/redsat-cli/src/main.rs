@@ -18,7 +18,7 @@ use redsat_lang::{
     Answer, AskFn, CompilerOptions, Diagnostic, ExplicitTypes, OptionLayer, SourceFile,
     UnboundedInts,
 };
-use redsat_sat::{Cadical, SolveResult, Solver, dimacs};
+use redsat_sat::{Cadical, Cdcl, SolveResult, Solver, dimacs};
 
 /// RedSAT: declarative programming by reduction to SAT.
 ///
@@ -48,6 +48,10 @@ struct Cli {
     /// Pause after each solution: Enter shows the next one, `a` all of them, `q` stops.
     #[arg(long)]
     interactive: bool,
+
+    /// The SAT solver: `cadical` (fast, the default) or `builtin` (RedSAT's own, pure Rust).
+    #[arg(long, value_name = "cadical|builtin", default_value = "cadical", value_parser = ["cadical", "builtin"])]
+    solver: String,
 }
 
 #[derive(Subcommand)]
@@ -72,6 +76,10 @@ enum Command {
     Dimacs {
         /// The `.cnf` file to solve, or `-` to read standard input.
         path: PathBuf,
+
+        /// The SAT solver: `cadical` (the default) or `builtin`.
+        #[arg(long, value_name = "cadical|builtin", default_value = "cadical", value_parser = ["cadical", "builtin"])]
+        solver: String,
     },
 }
 
@@ -110,7 +118,7 @@ fn parse<T: std::str::FromStr<Err = String>>(text: &str) -> Result<T, String> {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
-        Some(Command::Dimacs { path }) => solve_dimacs(&path),
+        Some(Command::Dimacs { path, solver }) => solve_dimacs(&path, &solver),
         Some(Command::Lsp { .. }) => redsat_lsp::run_stdio()
             .map(|()| ExitCode::SUCCESS)
             .map_err(|error| error.to_string().into()),
@@ -120,6 +128,7 @@ fn main() -> ExitCode {
             &cli.options,
             cli.stats,
             cli.interactive,
+            &cli.solver,
         ),
     };
     result.unwrap_or_else(|error| {
@@ -168,9 +177,17 @@ fn run(
     args: &OptionArgs,
     stats: bool,
     interactive: bool,
+    solver: &str,
 ) -> Result<ExitCode, Box<dyn Error>> {
     let (source, options) = prepare(file, args)?;
-    let factory = || Box::new(Cadical::new()) as Box<dyn Solver>;
+    let builtin = solver == "builtin";
+    let factory = move || -> Box<dyn Solver> {
+        if builtin {
+            Box::new(Cdcl::new())
+        } else {
+            Box::new(Cadical::new())
+        }
+    };
     let mut out = io::stdout();
     let ask = |shown: u64| {
         let _ = io::stdout().flush();
@@ -214,7 +231,7 @@ fn check(file: &Path, args: &OptionArgs) -> Result<ExitCode, Box<dyn Error>> {
     }
 }
 
-fn solve_dimacs(path: &Path) -> Result<ExitCode, Box<dyn Error>> {
+fn solve_dimacs(path: &Path, solver: &str) -> Result<ExitCode, Box<dyn Error>> {
     let cnf = if path == Path::new("-") {
         dimacs::parse(io::stdin().lock())?
     } else {
@@ -222,7 +239,11 @@ fn solve_dimacs(path: &Path) -> Result<ExitCode, Box<dyn Error>> {
         dimacs::parse(BufReader::new(file))?
     };
 
-    let mut solver = Cadical::new();
+    let mut solver: Box<dyn Solver> = if solver == "builtin" {
+        Box::new(Cdcl::new())
+    } else {
+        Box::new(Cadical::new())
+    };
     let vars = cnf.load_into(&mut solver);
     let result = solver.solve();
 

@@ -9,9 +9,14 @@ use std::path::{Path, PathBuf};
 
 use redsat_lang::config::{find_config, load_config};
 use redsat_lang::{CompilerOptions, OptionLayer, SourceFile};
-use redsat_sat::{Cadical, Solver};
+use redsat_sat::{Cadical, Cdcl, Solver};
 
 fn run_program(path: &Path) -> String {
+    run_program_with(path, false).0
+}
+
+/// Runs a program with CaDiCaL or the built-in solver; returns its output and whether it failed.
+fn run_program_with(path: &Path, builtin: bool) -> (String, bool) {
     let text = fs::read_to_string(path).expect("readable program");
     let name = path
         .file_name()
@@ -24,13 +29,19 @@ fn run_program(path: &Path) -> String {
         .unwrap_or_default();
     let options = CompilerOptions::resolve(&layer, &OptionLayer::default()).expect("valid options");
     let mut out = Vec::new();
-    let factory = || Box::new(Cadical::new()) as Box<dyn Solver>;
+    let factory = move || -> Box<dyn Solver> {
+        if builtin {
+            Box::new(Cdcl::new())
+        } else {
+            Box::new(Cadical::new())
+        }
+    };
     let outcome = redsat_lang::run(&source, &options, &factory, &mut out);
     let mut text = String::from_utf8(out).expect("UTF-8 output");
     for diagnostic in &outcome.diagnostics {
         text.push_str(&diagnostic.render(&source));
     }
-    text
+    (text, outcome.has_errors())
 }
 
 fn programs_in(directory: &Path, found: &mut Vec<PathBuf>) {
@@ -98,4 +109,56 @@ fn golden_programs() {
         cases.len(),
         failures.join("\n")
     );
+}
+
+/// Programs whose output legitimately depends on which solutions a solver finds first: they
+/// print the first (or first few) solutions of a problem with several.
+const SOLVER_DEPENDENT: &[&str] = &[
+    "not_unique",
+    "functions_and_returns",
+    "optimize_all_optima",
+    "palindromes",
+    "scheduling",
+];
+
+/// Programs too slow for the built-in solver to be part of the test suite (large multipliers).
+const TOO_SLOW_FOR_BUILTIN: &[&str] = &["factor", "pell"];
+
+/// Every program also runs on the built-in CDCL solver. Each decoded model is checked against
+/// the program's constraints, so a wrong answer would surface as an internal error. Outputs must
+/// match as sorted lines, unless they depend on the order in which solutions are found.
+#[test]
+fn programs_agree_on_the_builtin_solver() {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut programs = Vec::new();
+    programs_in(&crate_dir.join("tests/programs"), &mut programs);
+    programs_in(&crate_dir.join("../../examples"), &mut programs);
+    let mut failures = Vec::new();
+    let mut differing = Vec::new();
+    for program in &programs {
+        let name = program
+            .file_stem()
+            .expect("a name")
+            .to_string_lossy()
+            .into_owned();
+        if TOO_SLOW_FOR_BUILTIN.contains(&name.as_str()) {
+            continue;
+        }
+        let (reference, reference_failed) = run_program_with(program, false);
+        let (builtin, builtin_failed) = run_program_with(program, true);
+        if builtin.contains("internal error") || reference_failed != builtin_failed {
+            failures.push(format!("{name}: failed={builtin_failed}\n{builtin}"));
+            continue;
+        }
+        let sorted = |text: &str| {
+            let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+            lines.sort();
+            lines
+        };
+        if sorted(&reference) != sorted(&builtin) && !SOLVER_DEPENDENT.contains(&name.as_str()) {
+            differing.push(name);
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(differing.is_empty(), "outputs differ for: {differing:?}");
 }

@@ -208,6 +208,16 @@ REDSAT_BLESS=1 cargo test -p redsat-lang --test programs   # re-record outputs a
 cd playground && npm test                    # the playground's checks
 ```
 
+`scripts/ci-local.sh` runs exactly what CI runs (formatting, lints, tests, the WebAssembly build
+and the playground's tests) in about 15 seconds once built. Enable the pre-push hook once per
+clone, and pushes that would fail CI are stopped before they leave your machine:
+
+```bash
+git config core.hooksPath .githooks   # runs scripts/ci-local.sh before every push
+```
+
+The hook checks the working tree, so commit (or stash) your changes before pushing.
+
 The test suite includes:
 - unit tests, plus exhaustive tests of the arithmetic circuits;
 - randomized checks that the CNF encoding agrees with the circuits;

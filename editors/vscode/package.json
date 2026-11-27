@@ -2,7 +2,7 @@
   "name": "redsat",
   "displayName": "RedSAT",
   "description": "Syntax highlighting, snippets and a language server client (diagnostics, completion, hover, go to definition, outline, inlay hints) for the RedSAT language (.rsat).",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "redsat",
   "private": true,
   "engines": {

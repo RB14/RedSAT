@@ -1,85 +1,181 @@
-// The RedSAT playground: pick an example or write a program, run it in the browser.
+// The RedSAT playground: write a program or open an example, and run it in the browser.
 
+import { SOLVERS, solverById } from './backends.js';
+import { Compiler } from './compiler.js';
 import { createEditor } from './editor.js';
+import { renderHome } from './home.js';
+import { markOutput, setupMobile, showTab } from './mobile.js';
 import { lexicon } from './rsat-language.js';
 import { decodeShare, encodeShare } from './share.js';
+import { Store } from './store.js';
 
 const $ = (id) => document.getElementById(id);
 
-const STORAGE = {
-  example: 'redsat.example',
-  edits: 'redsat.edits',
-  verbose: 'redsat.verbose',
-  strict: 'redsat.strict',
-  split: 'redsat.split',
-};
 /** Output lines kept on screen; a `solve all` can print far more. */
 const MAX_LINES = 5000;
-const SHARED = 'shared';
 
-/** A worker running the compiler. Replies are matched to requests by id. */
-class Compiler {
-  constructor() {
-    this.nextId = 1;
-    this.pending = new Map();
-    this.spawn();
+const store = new Store();
+const runner = new Compiler();
+const analyzer = new Compiler();
+const phone = matchMedia('(max-width: 760px)');
+
+let examples = [];
+let editor = null;
+/** The open document: {kind: 'example'|'file'|'shared', id, title, description, slow, fileName}. */
+let doc = null;
+let sharedSource = '';
+let running = false;
+
+// --- documents ------------------------------------------------------------------------------
+
+function exampleDoc(example) {
+  return { kind: 'example', id: example.name, title: example.title, description: example.description, slow: example.slow, fileName: example.file };
+}
+
+function fileDoc(file) {
+  return { kind: 'file', id: file.id, title: file.name, description: 'Your file, saved in this browser.', slow: null, fileName: `${file.name}.rsat` };
+}
+
+function sharedDoc() {
+  return { kind: 'shared', id: 'shared', title: 'Shared program', description: 'Opened from a link. Save a copy to keep your changes.', slow: null, fileName: 'shared.rsat' };
+}
+
+const exampleNamed = (name) => examples.find((example) => example.name === name);
+
+function sourceOf(document) {
+  if (document.kind === 'example') return store.exampleSource(exampleNamed(document.id));
+  if (document.kind === 'file') return store.file(document.id)?.source ?? '';
+  return sharedSource;
+}
+
+function open(document) {
+  doc = document;
+  if (document.kind !== 'shared') {
+    store.current = { kind: document.kind, id: document.id };
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   }
+  store.markVisited();
+  editor.load(sourceOf(document));
+  renderDocument();
+  resetOutput();
+  showView('editor');
+  showTab('code');
+  if (!phone.matches) editor.focus();
+}
 
-  spawn() {
-    this.worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
-    this.worker.onmessage = ({ data }) => {
-      const entry = this.pending.get(data.id);
-      if (!entry) return;
-      if (data.type === 'output') return entry.onOutput?.(data.text);
-      if (data.type === 'trace') return entry.onTrace?.(data.text);
-      this.pending.delete(data.id);
-      if (data.type === 'crash') {
-        entry.reject(new Error(data.message));
-        this.restart('the compiler crashed');
-      } else {
-        entry.resolve(data);
-      }
-    };
-    this.worker.onerror = (event) => {
-      event.preventDefault();
-      this.failAll(event.message || 'the compiler could not be loaded');
-    };
-  }
+function onEdit(text) {
+  if (!doc) return;
+  if (doc.kind === 'example') store.setExampleSource(exampleNamed(doc.id), text);
+  else if (doc.kind === 'file') store.updateFile(doc.id, { source: text });
+  else sharedSource = text;
+  renderDocumentActions();
+}
 
-  request(message, handlers = {}) {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, ...handlers });
-      this.worker.postMessage({ id, ...message });
-    });
-  }
+function renderDocument() {
+  const title = $('doc-title');
+  title.value = doc.title;
+  title.readOnly = doc.kind !== 'file';
+  title.title = doc.kind === 'file' ? 'Rename' : '';
+  $('doc-description').textContent = doc.description;
+  $('file-name').textContent = doc.kind === 'file' ? `${doc.title}.rsat` : doc.title;
+  document.title = `${doc.kind === 'file' ? `${doc.title}.rsat` : doc.title} · RedSAT Playground`;
+  renderSlowNote();
+  renderDocumentActions();
+}
 
-  failAll(reason) {
-    for (const entry of this.pending.values()) entry.reject(new Error(reason));
-    this.pending.clear();
-  }
+function renderDocumentActions() {
+  const modified = doc.kind === 'example' && editor.text !== exampleNamed(doc.id).source;
+  $('reset').hidden = !modified;
+  $('save-copy').hidden = doc.kind === 'file';
+  $('delete-file').hidden = doc.kind !== 'file';
+}
 
-  /** Kills the worker (and whatever it is running) and starts a fresh one. */
-  restart(reason = 'stopped') {
-    this.worker.terminate();
-    this.failAll(reason);
-    this.spawn();
+function renderSlowNote() {
+  const note = $('slow-note');
+  const show = Boolean(doc?.slow) && store.settings.solver === 'builtin';
+  note.hidden = !show;
+  if (!show) return;
+  $('slow-text').textContent = `⏳ ${doc.slow}`;
+  $('use-cadical').hidden = !SOLVERS.some((solver) => solver.id === 'cadical');
+}
+
+function newFile() {
+  const file = store.createFile('untitled');
+  open(fileDoc(file));
+  if (!phone.matches) {
+    $('doc-title').focus();
+    $('doc-title').select();
   }
 }
 
-// --- state ----------------------------------------------------------------------------------
+function renameFile() {
+  if (doc?.kind !== 'file') return;
+  const name = $('doc-title').value.trim().replace(/\.rsat$/, '').replace(/[^\w.-]+/g, '-') || 'untitled';
+  const unique = name === doc.title ? name : store.freeName(name);
+  store.updateFile(doc.id, { name: unique });
+  doc = fileDoc(store.file(doc.id));
+  renderDocument();
+}
 
-const runner = new Compiler();
-const analyzer = new Compiler();
-let examples = [];
-let current = null; // the example (or shared program) in the editor
-let editor = null;
-let running = false;
-const edits = JSON.parse(localStorage.getItem(STORAGE.edits) ?? '{}');
+function saveCopy() {
+  const base = doc.kind === 'example' ? doc.id : 'shared';
+  const file = store.createFile(base, editor.text);
+  open(fileDoc(file));
+  toast(`Saved as ${file.name}.rsat`);
+}
+
+function deleteFile(id) {
+  const file = store.file(id);
+  if (!file || !confirm(`Delete ${file.name}.rsat? This cannot be undone.`)) return;
+  store.deleteFile(id);
+  if (doc?.kind === 'file' && doc.id === id) {
+    doc = null;
+    store.current = null;
+    showView('home');
+  } else if (document.body.dataset.view === 'home') {
+    showView('home');
+  }
+}
+
+function resetExample() {
+  const example = exampleNamed(doc.id);
+  store.setExampleSource(example, example.source);
+  editor.load(example.source);
+  renderDocumentActions();
+}
+
+// --- views ----------------------------------------------------------------------------------
+
+function showView(view) {
+  if (view === 'editor' && !doc) view = 'home';
+  document.body.dataset.view = view;
+  $('home').hidden = view !== 'home';
+  if (view === 'home') {
+    renderHome(
+      $('home'),
+      { examples, files: store.files, current: doc && { kind: doc.kind, id: doc.id }, firstVisit: !store.visited },
+      {
+        newFile,
+        openExample: (name) => open(exampleDoc(exampleNamed(name))),
+        openFile: (id) => open(fileDoc(store.file(id))),
+        deleteFile,
+        close: () => showView('editor'),
+      },
+    );
+    $('home').scrollTop = 0;
+  }
+}
 
 // --- output panel ---------------------------------------------------------------------------
 
 const output = { queue: [], lines: 0, dropped: 0, scheduled: false };
+
+function resetOutput() {
+  clearOutput();
+  $('output').append(placeholder());
+  setStatus('idle', 'Ready');
+  $('stats').textContent = '';
+}
 
 function clearOutput() {
   $('output').replaceChildren();
@@ -88,8 +184,21 @@ function clearOutput() {
   output.dropped = 0;
 }
 
+function placeholder() {
+  const div = document.createElement('div');
+  div.className = 'placeholder';
+  div.innerHTML = phone.matches
+    ? `<p>Tap <b>Run</b> to compile the program to SAT, solve it and print the result.</p>
+       <p>Everything runs on your device: the RedSAT compiler and its SAT solvers are compiled to WebAssembly.</p>`
+    : `<p><kbd>Ctrl</kbd> + <kbd>Enter</kbd> or <b>Run</b> compiles the program to SAT, solves it and prints the result.</p>
+       <p>Everything runs in your browser: the RedSAT compiler and its SAT solvers are compiled to WebAssembly.</p>
+       <p>Hover a name for its type or inferred domain, <kbd>Ctrl</kbd>+click to jump to its declaration.</p>`;
+  return div;
+}
+
 function emit(kind, text) {
   output.queue.push([kind, text]);
+  markOutput();
   if (!output.scheduled) {
     output.scheduled = true;
     requestAnimationFrame(flushOutput);
@@ -117,11 +226,14 @@ function flushOutput() {
 
 function emitDiagnostic(diagnostic) {
   flushOutput();
-  const block = document.createElement('div');
+  const block = document.createElement('button');
   block.className = `diagnostic ${diagnostic.severity}`;
   block.textContent = diagnostic.rendered;
   block.title = 'Show in the editor';
-  block.addEventListener('click', () => editor.reveal(diagnostic.from, diagnostic.to));
+  block.addEventListener('click', () => {
+    showTab('code');
+    editor.reveal(diagnostic.from, diagnostic.to);
+  });
   $('output').append(block);
 }
 
@@ -131,14 +243,14 @@ function formatTime(ms) {
   return ms < 1000 ? `${ms.toFixed(ms < 10 ? 1 : 0)} ms` : `${(ms / 1000).toFixed(2)} s`;
 }
 
+function plural(count, word) {
+  return `${count.toLocaleString()} ${word}${count === 1 ? '' : 's'}`;
+}
+
 function setStatus(kind, text) {
   const status = $('status');
   status.className = `status-text ${kind}`;
   status.textContent = text;
-}
-
-function plural(count, word) {
-  return `${count.toLocaleString()} ${word}${count === 1 ? '' : 's'}`;
 }
 
 function showStats(result) {
@@ -150,45 +262,47 @@ function showStats(result) {
   const sum = (key) => solves.reduce((total, solve) => total + solve[key], 0);
   $('stats').textContent = [
     plural(solves.length, 'solve'),
-    `${plural(Math.max(...solves.map((s) => s.decisionBits)), 'decision bit')}`,
-    `${plural(sum('cnfVars'), 'variable')}`,
-    `${plural(sum('cnfClauses'), 'clause')}`,
-    `${plural(sum('satCalls'), 'SAT call')}`,
+    plural(Math.max(...solves.map((solve) => solve.decisionBits)), 'decision bit'),
+    plural(sum('cnfVars'), 'variable'),
+    plural(sum('cnfClauses'), 'clause'),
+    plural(sum('satCalls'), 'SAT call'),
   ].join(' · ');
 }
 
 // --- running --------------------------------------------------------------------------------
 
 function config() {
-  return $('strict').checked ? '[compiler]\nstrict = true\n' : '';
+  return store.settings.strict ? '[compiler]\nstrict = true\n' : '';
 }
 
 function setRunning(value) {
   running = value;
-  $('run').hidden = value;
-  $('stop').hidden = !value;
   document.body.classList.toggle('running', value);
 }
 
 async function runProgram() {
-  if (running || !editor) return;
+  if (running || !editor || !doc) return;
   clearOutput();
   $('stats').textContent = '';
   setRunning(true);
+  if (phone.matches) showTab('output');
+  const solver = solverById(store.settings.solver);
   const started = performance.now();
-  const tick = () => setStatus('running', `Running… ${formatTime(performance.now() - started)}`);
+  let status = 'Running';
+  const tick = () => setStatus('running', `${status}… ${formatTime(performance.now() - started)}`);
   tick();
   const timer = setInterval(tick, 100);
   try {
     const { result } = await runner.request(
+      { type: 'run', name: doc.fileName, source: editor.text, config: config(), verbose: store.settings.verbose, solver: solver.id },
       {
-        type: 'run',
-        name: current?.file ?? 'program.rsat',
-        source: editor.text,
-        config: config(),
-        verbose: $('verbose').checked,
+        onOutput: (text) => emit('out', text),
+        onTrace: (text) => emit('trace', `${text}\n`),
+        onStatus: (text) => {
+          status = text.replace(/…$/, '');
+          tick();
+        },
       },
-      { onOutput: (text) => emit('out', text), onTrace: (text) => emit('trace', `${text}\n`) },
     );
     flushOutput();
     for (const diagnostic of result.diagnostics) emitDiagnostic(diagnostic);
@@ -197,7 +311,8 @@ async function runProgram() {
     if (!$('output').childElementCount && !output.queue.length) emit('system', '(the program printed nothing)\n');
     const elapsed = formatTime(performance.now() - started);
     const errors = result.diagnostics.filter((d) => d.severity === 'error').length;
-    if (result.ok) setStatus('ok', `✓ Finished in ${elapsed}`);
+    const used = result.solves.length ? ` · ${solver.label}` : '';
+    if (result.ok) setStatus('ok', `✓ Finished in ${elapsed}${used}`);
     else setStatus('error', `✗ ${plural(errors, 'error')} · ${elapsed}`);
     showStats(result);
   } catch (error) {
@@ -206,9 +321,12 @@ async function runProgram() {
     if (error.message === 'stopped') {
       emit('system', `\n⏹ Stopped after ${elapsed}.\n`);
       setStatus('stopped', `⏹ Stopped after ${elapsed}`);
-    } else {
-      emit('crash', `Internal compiler error: ${error.message}\nPlease report this program!\n`);
+    } else if (error.message === 'the compiler crashed') {
+      emit('crash', 'Internal compiler error: the compiler crashed on this program. Please report it!\n');
       setStatus('error', '✗ The compiler crashed');
+    } else {
+      emit('crash', `${error.message}\n`);
+      setStatus('error', '✗ Could not run the program');
     }
   } finally {
     clearInterval(timer);
@@ -220,88 +338,40 @@ function stopProgram() {
   if (running) runner.restart();
 }
 
-/** Diagnostics and inferred domains for the editor (the latest request wins). */
+/** The compiler's analysis for the editor (the latest request wins). */
 let analysisGeneration = 0;
 async function analyze(source) {
   const generation = ++analysisGeneration;
   try {
-    const { result } = await analyzer.request({ type: 'analyze', name: current?.file ?? 'program.rsat', source, config: config() });
+    const { result } = await analyzer.request({ type: 'analyze', name: doc?.fileName ?? 'program.rsat', source, config: config() });
     return generation === analysisGeneration ? result : null;
   } catch {
     return null;
   }
 }
 
-// --- examples -------------------------------------------------------------------------------
-
-function saveEdits() {
-  localStorage.setItem(STORAGE.edits, JSON.stringify(edits));
-}
-
-function showExampleInfo() {
-  $('example-title').textContent = current.title;
-  $('example-description').textContent = current.description;
-  $('slow-note').hidden = !current.slow;
-  $('slow-note').textContent = current.slow ? `⏳ ${current.slow}` : '';
-  $('reset').hidden = current.name === SHARED || editor.text === current.source;
-}
-
-function selectExample(name, { keepEdits = true } = {}) {
-  const example = name === SHARED ? current : examples.find((e) => e.name === name) ?? examples[0];
-  current = example;
-  $('examples').value = example.name;
-  if (example.name !== SHARED) localStorage.setItem(STORAGE.example, example.name);
-  editor.text = (keepEdits && edits[example.name]) || example.source;
-  showExampleInfo();
-  clearOutput();
-  $('output').append(placeholder());
-  setStatus('idle', 'Ready');
-  $('stats').textContent = '';
-}
-
-function placeholder() {
-  const div = document.createElement('div');
-  div.className = 'placeholder';
-  div.innerHTML = `
-    <p><kbd>Ctrl</kbd> + <kbd>Enter</kbd> or <b>Run</b> compiles the program to SAT, solves it and prints the result.</p>
-    <p>Everything runs in your browser: the RedSAT compiler and its SAT solver are Rust, compiled to WebAssembly.</p>
-    <p>Hover a variable to see the domain the compiler inferred for it.</p>`;
-  return div;
-}
-
-function fillExamplePicker() {
-  const select = $('examples');
-  select.replaceChildren();
-  if (current?.name === SHARED) select.append(new Option('Shared program', SHARED));
-  for (const example of examples) {
-    select.append(new Option(`${example.title}${example.slow ? '  ⏳' : ''}`, example.name));
-  }
-}
-
-function onEdit(text) {
-  if (!current) return;
-  if (current.name !== SHARED) {
-    if (text === current.source) delete edits[current.name];
-    else edits[current.name] = text;
-    saveEdits();
-  }
-  $('reset').hidden = current.name === SHARED || text === current.source;
-}
-
-// --- sharing --------------------------------------------------------------------------------
+// --- sharing, toasts, layout ----------------------------------------------------------------
 
 function toast(message) {
   const element = $('toast');
   element.textContent = message;
   element.classList.add('visible');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => element.classList.remove('visible'), 2200);
+  toast.timer = setTimeout(() => element.classList.remove('visible'), 2400);
 }
 
 async function share() {
   const hash = await encodeShare(editor.text);
   const url = `${location.origin}${location.pathname}${hash}`;
   history.replaceState(null, '', hash);
+  if (phone.matches && navigator.share) {
+    try {
+      await navigator.share({ title: `${doc.title} · RedSAT`, url });
+      return;
+    } catch {
+      // Cancelled or unsupported: fall back to the clipboard.
+    }
+  }
   try {
     await navigator.clipboard.writeText(url);
     toast('Link copied to the clipboard ✓');
@@ -310,20 +380,15 @@ async function share() {
   }
 }
 
-// --- layout ---------------------------------------------------------------------------------
-
 function setupDivider() {
   const workspace = $('workspace');
   const divider = $('divider');
-  const saved = Number(localStorage.getItem(STORAGE.split));
-  if (saved) workspace.style.setProperty('--split', `${saved}%`);
+  if (store.split) workspace.style.setProperty('--split', `${store.split}%`);
   const move = (event) => {
     const rect = workspace.getBoundingClientRect();
-    const vertical = getComputedStyle(workspace).gridTemplateRows.split(' ').length > 1 && rect.width < 900;
-    const ratio = vertical ? (event.clientY - rect.top) / rect.height : (event.clientX - rect.left) / rect.width;
-    const percent = Math.min(80, Math.max(20, ratio * 100));
+    const percent = Math.min(80, Math.max(20, ((event.clientX - rect.left) / rect.width) * 100));
     workspace.style.setProperty('--split', `${percent}%`);
-    localStorage.setItem(STORAGE.split, percent.toFixed(1));
+    store.split = Number(percent.toFixed(1));
   };
   divider.addEventListener('pointerdown', (event) => {
     divider.setPointerCapture(event.pointerId);
@@ -337,39 +402,81 @@ function setupDivider() {
   });
 }
 
-function setupToggles() {
+function setupOptions() {
   for (const id of ['verbose', 'strict']) {
     const box = $(id);
-    box.checked = localStorage.getItem(STORAGE[id]) === 'true';
+    box.checked = store.settings[id];
     box.addEventListener('change', () => {
-      localStorage.setItem(STORAGE[id], String(box.checked));
-      if (id === 'strict') editor?.view.dispatch({}); // re-lint with the new options
+      store.settings[id] = box.checked;
+      store.saveSettings();
+      if (id === 'strict') editor?.view.dispatch({}); // re-check with the new options
     });
   }
+  const select = $('solver');
+  select.replaceChildren(...SOLVERS.map((solver) => new Option(`${solver.label} — ${solver.detail}`, solver.id)));
+  select.value = solverById(store.settings.solver).id;
+  select.addEventListener('change', () => {
+    store.settings.solver = select.value;
+    store.saveSettings();
+    if (doc) renderSlowNote();
+  });
+  $('use-cadical').addEventListener('click', () => {
+    select.value = 'cadical';
+    select.dispatchEvent(new Event('change'));
+    toast('Solver: CaDiCaL');
+  });
+}
+
+function setupMenu() {
+  const menu = $('menu');
+  $('menu-button').addEventListener('click', () => menu.showModal());
+  menu.addEventListener('click', (event) => {
+    if (event.target === menu || event.target.closest('[data-close]')) menu.close();
+  });
+  $('menu-new').addEventListener('click', () => (menu.close(), newFile()));
+  $('menu-home').addEventListener('click', () => (menu.close(), showView('home')));
+  $('menu-share').addEventListener('click', () => (menu.close(), share()));
 }
 
 // --- start-up -------------------------------------------------------------------------------
 
 async function start() {
-  setupToggles();
-  setupDivider();
-  $('run').addEventListener('click', runProgram);
-  $('stop').addEventListener('click', stopProgram);
+  // iOS zooms into text fields with small fonts as they get focus; it still allows pinch zoom.
+  if (/iP(hone|ad|od)/.test(navigator.userAgent)) {
+    const viewport = document.querySelector('meta[name=viewport]');
+    viewport.content += ', maximum-scale=1';
+  }
+  for (const button of document.querySelectorAll('.run-button')) button.addEventListener('click', runProgram);
+  for (const button of document.querySelectorAll('.stop-button')) button.addEventListener('click', stopProgram);
   $('share').addEventListener('click', share);
-  $('reset').addEventListener('click', () => {
-    delete edits[current.name];
-    saveEdits();
-    selectExample(current.name, { keepEdits: false });
+  $('new-file').addEventListener('click', newFile);
+  $('file-button').addEventListener('click', () => showView(document.body.dataset.view === 'home' ? 'editor' : 'home'));
+  $('brand').addEventListener('click', (event) => {
+    event.preventDefault();
+    showView('home');
   });
-  $('examples').addEventListener('change', (event) => selectExample(event.target.value));
+  $('reset').addEventListener('click', resetExample);
+  $('save-copy').addEventListener('click', saveCopy);
+  $('delete-file').addEventListener('click', () => deleteFile(doc.id));
+  $('doc-title').addEventListener('change', renameFile);
+  $('doc-title').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      editor.focus();
+    }
+  });
   document.addEventListener('keydown', (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
       event.preventDefault();
       runProgram();
-    } else if (event.key === 'Escape' && running) {
-      stopProgram();
+    } else if (event.key === 'Escape') {
+      if (running) stopProgram();
+      else if (document.body.dataset.view === 'home' && doc) showView('editor');
     }
   });
+  setupOptions();
+  setupDivider();
+  setupMenu();
 
   setStatus('running', 'Loading the compiler…');
   let hello;
@@ -384,40 +491,33 @@ async function start() {
   }
   $('version').textContent = `RedSAT ${hello.version}`;
 
-  const shared = await decodeShare(location.hash);
-  if (shared !== null) current = sharedProgram(shared);
-  fillExamplePicker();
+  editor = createEditor({ parent: $('editor'), words: lexicon(hello.vocabulary), analyze, onRun: runProgram, onChange: onEdit });
+  setupMobile({ editor, query: phone, options: $('options'), desktopSlot: $('options-slot'), mobileSlot: $('menu-options') });
+  setStatus('idle', 'Ready');
 
-  editor = createEditor({
-    parent: $('editor'),
-    words: lexicon(hello.vocabulary),
-    doc: '',
-    analyze,
-    onRun: runProgram,
-    onChange: onEdit,
-  });
-  selectExample(shared !== null ? SHARED : localStorage.getItem(STORAGE.example) ?? examples[0].name);
-  editor.focus();
+  const shared = await decodeShare(location.hash);
+  if (shared !== null) {
+    sharedSource = shared;
+    open(sharedDoc());
+  } else {
+    const last = store.current;
+    const lastDoc =
+      last?.kind === 'example' && exampleNamed(last.id)
+        ? exampleDoc(exampleNamed(last.id))
+        : last?.kind === 'file' && store.file(last.id)
+          ? fileDoc(store.file(last.id))
+          : null;
+    if (lastDoc && store.visited) open(lastDoc);
+    else showView('home');
+  }
 
   // A share link opened in a tab that already shows the playground.
   window.addEventListener('hashchange', async () => {
     const source = await decodeShare(location.hash);
-    if (source === null || source === editor.text) return;
-    current = sharedProgram(source);
-    fillExamplePicker();
-    selectExample(SHARED);
+    if (source === null || (doc?.kind === 'shared' && source === editor.text)) return;
+    sharedSource = source;
+    open(sharedDoc());
   });
-}
-
-function sharedProgram(source) {
-  return {
-    name: SHARED,
-    file: 'shared.rsat',
-    title: 'Shared program',
-    description: 'Opened from a link. Edit and run it, or pick an example.',
-    slow: null,
-    source,
-  };
 }
 
 start();

@@ -1,4 +1,5 @@
-// RedSAT syntax for CodeMirror: highlighting, indentation, completion and hover docs.
+// RedSAT syntax for CodeMirror: highlighting and indentation (completion and hover live in
+// intelligence.js).
 //
 // Everything is built from the vocabulary the compiler itself reports (see `vocabulary()` in
 // crates/redsat-wasm), so the editor never disagrees with the language.
@@ -138,30 +139,4 @@ function tokenizer(words) {
 /** The RedSAT language for CodeMirror, given the compiler's vocabulary. */
 export function rsatLanguage(words) {
   return StreamLanguage.define(tokenizer(words));
-}
-
-/** A completion source: keywords, types, functions (with docs) and the program's own names. */
-export function completions(words) {
-  const fixed = [
-    ...[...words.keywords, ...words.contextual].map((label) => ({ label, type: 'keyword', info: words.docs.get(label)?.doc })),
-    ...[...words.types].map((label) => ({ label, type: 'type' })),
-    ...words.vocabulary.builtins.map(({ name, doc }) => ({ label: name, type: 'function', detail: 'built-in', info: doc })),
-    ...words.vocabulary.prelude.map(({ name, doc }) => ({
-      label: name,
-      type: 'function',
-      detail: 'std',
-      info: doc,
-    })),
-  ];
-  const known = new Set(fixed.map((option) => option.label));
-  return (context) => {
-    const word = context.matchBefore(/[A-Za-z_][A-Za-z0-9_]*/);
-    if (!word || (word.from === word.to && !context.explicit)) return null;
-    const line = context.state.doc.lineAt(context.pos);
-    if (line.text.slice(0, context.pos - line.from).includes('//')) return null; // in a comment
-    const own = new Set(context.state.doc.toString().match(/[A-Za-z_][A-Za-z0-9_]*/g) ?? []);
-    own.delete(word.text);
-    const names = [...own].filter((name) => !known.has(name)).map((label) => ({ label, type: 'variable' }));
-    return { from: word.from, options: [...fixed, ...names], validFor: /^[A-Za-z_][A-Za-z0-9_]*$/ };
-  };
 }

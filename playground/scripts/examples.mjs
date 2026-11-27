@@ -7,33 +7,35 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-/** [file name without `.rsat`, title] in the order the playground lists them. */
+/** The categories of the home page, in order. Examples not listed below go to the last one. */
+export const CATEGORIES = ['Getting started', 'Puzzles', 'Planning & optimization', 'Numbers', 'Strings & bits', 'More'];
+
+/** [file name without `.rsat`, title, category] in the order the playground lists them. */
 export const CURATED = [
-  ['chickens_and_rabbits', 'Chickens and rabbits'],
-  ['bigger_of_two', 'Two numbers'],
-  ['digit_puzzle', 'Digit puzzle'],
-  ['coins', 'Making change'],
-  ['send_more_money', 'SEND + MORE = MONEY'],
-  ['sudoku', 'Sudoku'],
-  ['n_queens', 'N-Queens'],
-  ['magic_square', 'Magic square'],
-  ['knights_and_knaves', 'Knights and knaves'],
-  ['graph_coloring', 'Graph coloring'],
-  ['scheduling', 'Scheduling'],
-  ['knapsack', 'Knapsack'],
-  ['pythagorean', 'Pythagorean triples'],
-  ['sums_of_two_squares', 'Sums of two squares'],
-  ['palindromes', 'Palindromes'],
-  ['bits', 'Bit tricks'],
-  ['factor', 'Factoring'],
-  ['pell', "Pell's equation"],
+  ['chickens_and_rabbits', 'Chickens and rabbits', 'Getting started'],
+  ['bigger_of_two', 'Two numbers', 'Getting started'],
+  ['digit_puzzle', 'Digit puzzle', 'Getting started'],
+  ['send_more_money', 'SEND + MORE = MONEY', 'Puzzles'],
+  ['sudoku', 'Sudoku', 'Puzzles'],
+  ['n_queens', 'N-Queens', 'Puzzles'],
+  ['magic_square', 'Magic square', 'Puzzles'],
+  ['knights_and_knaves', 'Knights and knaves', 'Puzzles'],
+  ['coins', 'Making change', 'Planning & optimization'],
+  ['graph_coloring', 'Graph coloring', 'Planning & optimization'],
+  ['scheduling', 'Scheduling', 'Planning & optimization'],
+  ['knapsack', 'Knapsack', 'Planning & optimization'],
+  ['pythagorean', 'Pythagorean triples', 'Numbers'],
+  ['sums_of_two_squares', 'Sums of two squares', 'Numbers'],
+  ['factor', 'Factoring', 'Numbers'],
+  ['pell', "Pell's equation", 'Numbers'],
+  ['palindromes', 'Palindromes', 'Strings & bits'],
+  ['bits', 'Bit tricks', 'Strings & bits'],
 ];
 
-/** Examples that take long on the in-browser solver, with the reason shown to the user. */
+/** Examples that are slow with the built-in solver, with what to tell the user. */
 export const SLOW = {
-  factor:
-    'Takes about 15 s with the built-in solver in the browser (CaDiCaL on the command line: 0.04 s).',
-  pell: 'Very slow with the built-in solver in the browser; CaDiCaL on the command line solves it in milliseconds.',
+  factor: 'About 15 s with the built-in solver. Pick CaDiCaL as the solver for an instant answer.',
+  pell: 'Very slow with the built-in solver. Pick CaDiCaL as the solver: it answers in milliseconds.',
 };
 
 /** The first paragraph of the comment block at the top of a program. */
@@ -56,7 +58,8 @@ function titleFromName(name) {
 /** The examples in `directory`, in playground order. */
 export function loadExamples(directory) {
   const order = new Map(CURATED.map(([name], index) => [name, index]));
-  const titles = new Map(CURATED);
+  const titles = new Map(CURATED.map(([name, title]) => [name, title]));
+  const categories = new Map(CURATED.map(([name, , category]) => [name, category]));
   return readdirSync(directory)
     .filter((file) => file.endsWith('.rsat'))
     .map((file) => {
@@ -66,6 +69,7 @@ export function loadExamples(directory) {
         name,
         file,
         title: titles.get(name) ?? titleFromName(name),
+        category: categories.get(name) ?? CATEGORIES.at(-1),
         description: description(source),
         slow: SLOW[name] ?? null,
         source,

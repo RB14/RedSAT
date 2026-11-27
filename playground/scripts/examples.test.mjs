@@ -5,13 +5,16 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-import { CURATED, SLOW, description, loadExamples } from './examples.mjs';
+import { CATEGORIES, CURATED, SLOW, description, loadExamples } from './examples.mjs';
 
 const examplesDir = fileURLToPath(new URL('../../examples', import.meta.url));
 
 test('every curated example exists', () => {
   for (const [name] of CURATED) {
     assert.ok(existsSync(`${examplesDir}/${name}.rsat`), `examples/${name}.rsat (renamed?)`);
+  }
+  for (const [name, , category] of CURATED) {
+    assert.ok(CATEGORIES.includes(category), `${name}: unknown category ${category}`);
   }
   for (const name of Object.keys(SLOW)) {
     assert.ok(existsSync(`${examplesDir}/${name}.rsat`), `examples/${name}.rsat`);

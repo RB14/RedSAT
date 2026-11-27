@@ -5,10 +5,13 @@
 //! are given both as one-based lines and columns and as UTF-16 offsets (what JavaScript strings
 //! and editors index by).
 
+mod js_solver;
+
 use std::cell::RefCell;
 use std::io::{self, Write};
 
 use js_sys::Function;
+use redsat_lang::check::SymbolKind;
 use redsat_lang::config::parse_config;
 use redsat_lang::syntax::{
     BUILTIN_FUNCTIONS, BUILTIN_TYPES, CONTEXTUAL_KEYWORDS, KEYWORDS, PRELUDE_FUNCTIONS,
@@ -27,6 +30,8 @@ thread_local! {
     static OUTPUT: RefCell<Option<Function>> = const { RefCell::new(None) };
     /// Receives `--verbose` progress lines.
     static TRACE: RefCell<Option<Function>> = const { RefCell::new(None) };
+    /// Creates instances of the JavaScript solver chosen for this run, with its name.
+    static SOLVER: RefCell<Option<(Function, String)>> = const { RefCell::new(None) };
 }
 
 /// Reports Rust panics on the JavaScript console instead of an opaque "unreachable" trap.
@@ -68,11 +73,13 @@ pub fn vocabulary() -> String {
     .to_string()
 }
 
-/// Runs a program with the built-in CDCL solver.
+/// Runs a program.
 ///
 /// `config` is the text of a `redsat.toml` (may be empty). Program output goes to `on_output`
 /// line by line; when `on_trace` is given it receives the progress lines `redsat --verbose`
-/// prints. Returns `{ok, diagnostics, rendered, solves, phases, steps}` as JSON.
+/// prints. The SAT solver is RedSAT's built-in CDCL, unless `create_solver` is given: then it
+/// is called for each solver instance and returns a JavaScript solver (see `js_solver`) called
+/// `solver_name`. Returns `{ok, diagnostics, rendered, solves, phases, steps}` as JSON.
 ///
 /// # Errors
 /// When `config` is not a valid configuration.
@@ -83,14 +90,37 @@ pub fn run(
     config: &str,
     on_output: Function,
     on_trace: Option<Function>,
+    create_solver: Option<Function>,
+    solver_name: Option<String>,
 ) -> Result<String, JsError> {
     let options = options(config)?;
     let file = SourceFile::new(name, source);
     OUTPUT.with(|output| *output.borrow_mut() = Some(on_output));
     let verbose = on_trace.is_some();
     TRACE.with(|trace| *trace.borrow_mut() = on_trace);
+    let external = create_solver.is_some();
+    SOLVER.with(|solver| {
+        *solver.borrow_mut() = create_solver.map(|create| {
+            (
+                create,
+                solver_name.unwrap_or_else(|| "JavaScript solver".into()),
+            )
+        });
+    });
 
-    let factory = || -> Box<dyn Solver> { Box::new(Cdcl::new()) };
+    let factory = move || -> Box<dyn Solver> {
+        if !external {
+            return Box::new(Cdcl::new());
+        }
+        SOLVER.with(|solver| {
+            let solver = solver.borrow();
+            let (create, name) = solver.as_ref().expect("set for this run");
+            let instance = create
+                .call0(&JsValue::NULL)
+                .expect("the solver module failed to create an instance");
+            Box::new(js_solver::JsSolver::new(instance.unchecked_into(), name)) as Box<dyn Solver>
+        })
+    };
     let trace = |line: &str| call(&TRACE, line);
     let hooks = Hooks {
         ask: None,
@@ -101,6 +131,7 @@ pub fn run(
     let _ = out.flush();
     OUTPUT.with(|output| output.borrow_mut().take());
     TRACE.with(|trace| trace.borrow_mut().take());
+    SOLVER.with(|solver| solver.borrow_mut().take());
 
     let result = json!({
         "ok": !outcome.has_errors(),
@@ -117,8 +148,9 @@ pub fn run(
     Ok(result.to_string())
 }
 
-/// Analyses a program for the editor without solving it: diagnostics plus the inferred domain
-/// of each unknown declaration. Elaboration stops after `budget_ms` milliseconds.
+/// Analyses a program for the editor without solving it: diagnostics, the inferred domain of
+/// each unknown declaration, and (when the program parses) its symbols, structs and enums, or
+/// `null` for those. Elaboration stops after `budget_ms` milliseconds.
 ///
 /// # Errors
 /// When `config` is not a valid configuration.
@@ -144,11 +176,58 @@ pub fn analyze(name: &str, source: &str, config: &str, budget_ms: u32) -> Result
             })
         })
         .collect();
+    let (symbols, structs, enums) = analysis.types.as_ref().map_or((Value::Null, Value::Null, Value::Null), |types| {
+        let symbols: Vec<Value> = types
+            .symbols
+            .iter()
+            .filter(|symbol| main.contains(symbol.span.start) && main.contains(symbol.span.end))
+            .map(|symbol| {
+                json!({
+                    "name": symbol.name,
+                    "kind": symbol_kind(symbol.kind),
+                    "detail": symbol.detail,
+                    "from": utf16_offset(main.text(), symbol.span.start),
+                    "to": utf16_offset(main.text(), symbol.span.end),
+                    "scopeFrom": utf16_offset(main.text(), symbol.scope.start),
+                    "scopeTo": utf16_offset(main.text(), symbol.scope.end),
+                })
+            })
+            .collect();
+        let structs: Vec<Value> = types
+            .structs
+            .iter()
+            .map(|info| {
+                let fields: Vec<Value> = info
+                    .fields
+                    .iter()
+                    .map(|(name, ty)| json!({ "name": name, "type": analysis.sources.slice(ty.span) }))
+                    .collect();
+                json!({ "name": info.name, "fields": fields })
+            })
+            .collect();
+        let enums: Vec<Value> =
+            types.enums.iter().map(|info| json!({ "name": info.name, "variants": info.variants })).collect();
+        (Value::from(symbols), Value::from(structs), Value::from(enums))
+    });
     Ok(json!({
         "diagnostics": diagnostics_json(&analysis.diagnostics, &analysis.sources),
         "domains": domains,
+        "symbols": symbols,
+        "structs": structs,
+        "enums": enums,
     })
     .to_string())
+}
+
+fn symbol_kind(kind: SymbolKind) -> &'static str {
+    match kind {
+        SymbolKind::Variable => "variable",
+        SymbolKind::Parameter => "parameter",
+        SymbolKind::LoopVariable => "loop variable",
+        SymbolKind::Function => "function",
+        SymbolKind::Enum => "enum",
+        SymbolKind::Struct => "struct",
+    }
 }
 
 fn options(config: &str) -> Result<CompilerOptions, JsError> {

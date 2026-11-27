@@ -1,6 +1,6 @@
 //! Bit-blasting: lowering word-level terms to an And-Inverter Graph.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
@@ -60,9 +60,15 @@ impl Blasted {
     }
 }
 
-/// The largest totalizer (booleans × outputs) built for a counting constraint; beyond it, the
-/// count stays a binary sum.
-const TOTALIZER_BUDGET: usize = 200_000;
+/// The most gates a generalized totalizer may take for one constraint; beyond it, the sum stays
+/// binary (large weights or bounds make the binary encoding the better one anyway).
+const PSEUDO_BOOLEAN_BUDGET: usize = 400_000;
+
+/// How many times the binary encoding's size a weighted generalized totalizer may take.
+const WEIGHTED_SIZE_FACTOR: usize = 8;
+
+/// The largest weight a generalized totalizer accepts.
+const MAX_WEIGHT: u64 = 1 << 32;
 
 /// The value of a comparison that the operands' ranges decide on their own (e.g. `x >= 0` when
 /// `x` lies in `0..=35`): such requirements then cost no clauses, and comparisons inside
@@ -228,7 +234,7 @@ impl Blaster<'_> {
                 {
                     return Bits::Bool(if decided { Edge::TRUE } else { Edge::FALSE });
                 }
-                if let Some(edge) = self.cardinality(term) {
+                if let Some(edge) = self.pseudo_boolean(term) {
                     return Bits::Bool(edge);
                 }
                 let (x, y) = (self.int_of(*a), self.int_of(*b));
@@ -241,10 +247,14 @@ impl Blaster<'_> {
         }
     }
 
-    /// A count compared with a constant (`count(…) <= k`, `exactly`, `at_least`, `at_most`),
-    /// encoded with a totalizer instead of an adder and a comparator: unit propagation then
-    /// enforces the bound by itself (arc consistency), which the binary encoding does not.
-    fn cardinality(&mut self, term: &Term) -> Option<Edge> {
+    /// A sum of weighted booleans compared with a constant: `count(…) <= k`, `exactly`,
+    /// `at_least`, `at_most`, or a weighted `sum(w[i] for i … if b[i]) <= k`. Encoded with a
+    /// generalized totalizer (GTE: Joshi, Martins and Manquinho, CP 2015; with unit weights it is
+    /// the totalizer of Bailleux and Boufkhad, 2003) instead of an adder and a comparator: unit
+    /// propagation then enforces the bound by itself (arc consistency). Its size grows with the
+    /// number of distinct partial sums up to the bound, so sums with large weights or bounds
+    /// keep the binary encoding.
+    fn pseudo_boolean(&mut self, term: &Term) -> Option<Edge> {
         let (Term::Eq(a, b) | Term::Lt(a, b) | Term::Le(a, b)) = term else {
             return None;
         };
@@ -252,17 +262,18 @@ impl Blaster<'_> {
             Term::Const(Constant::Int(value)) => Some(value.clone()),
             _ => None,
         };
-        let (bools, offset, k, count_on_left) = match (self.as_count(*a), constant(*b)) {
-            (Some((bools, offset)), Some(k)) => (bools, offset, k, true),
-            _ => match (constant(*a), self.as_count(*b)) {
-                (Some(k), Some((bools, offset))) => (bools, offset, k, false),
+        let (terms, offset, k, sum_on_left) = match (self.as_weighted_sum(*a), constant(*b)) {
+            (Some((terms, offset)), Some(k)) => (terms, offset, k, true),
+            _ => match (constant(*a), self.as_weighted_sum(*b)) {
+                (Some(k), Some((terms, offset))) => (terms, offset, k, false),
                 _ => return None,
             },
         };
-        let n = i64::try_from(bools.len()).ok()?;
-        // The bound on the number of true booleans (clamped: anything beyond 0..=n is decided).
+        let total: u64 = terms.iter().map(|&(_, weight)| weight).sum();
+        let n = i64::try_from(total).ok()?;
+        // The bound on the weighted sum (clamped: anything beyond 0..=total is decided).
         let m = i64::try_from((k - offset).clamp(BigInt::from(-1), BigInt::from(n + 1))).ok()?;
-        let (lo, hi) = match (term, count_on_left) {
+        let (lo, hi) = match (term, sum_on_left) {
             (Term::Eq(..), _) => (m, m),
             (Term::Le(..), true) => (0, m),
             (Term::Le(..), false) => (m, n),
@@ -277,31 +288,51 @@ impl Blaster<'_> {
             return Some(Edge::TRUE);
         }
         if hi == 0 {
-            return Some(self.aig.and_all(bools.iter().map(|&b| !b)));
+            return Some(self.aig.and_all(terms.iter().map(|&(b, _)| !b)));
         }
         if lo == n {
-            return Some(self.aig.and_all(bools));
+            return Some(self.aig.and_all(terms.iter().map(|&(b, _)| b)));
         }
-        // Outputs up to hi + 1 are needed; a totalizer that large costs about n·(hi + 1) gates.
-        let limit = usize::try_from((hi + 1).min(n)).ok()?;
-        if bools.len().saturating_mul(limit) > TOTALIZER_BUDGET {
-            return None;
-        }
-        let outputs = self.totalizer(&bools, limit);
+        // The thresholds needed are lo and hi + 1; partial sums are capped at the larger one.
+        let limit = u64::try_from(if hi < n { hi + 1 } else { lo }).ok()?;
+        // Counts (unit weights) always use the totalizer. Weighted sums use it only when it stays
+        // close to the binary encoding's size (about n·log2(total) gates): with large weights or
+        // bounds its many distinct partial sums make it far bigger and slower (measured: 27×
+        // slower on a 50-item knapsack), as encoding studies also find.
+        let unit = terms.iter().all(|&(_, weight)| weight == 1);
+        let bits = usize::try_from(u64::BITS - total.leading_zeros()).unwrap_or(64);
+        let mut budget = if unit {
+            PSEUDO_BOOLEAN_BUDGET
+        } else {
+            (WEIGHTED_SIZE_FACTOR * terms.len() * bits).max(2_000)
+        };
+        let at_least = self.generalized_totalizer(&terms, limit, &mut budget)?;
+        // `sum ≥ t` holds exactly when the smallest achievable sum ≥ t is reached.
+        let reaches = |threshold: i64| -> Edge {
+            let threshold = u64::try_from(threshold).unwrap_or(0);
+            if threshold == 0 {
+                return Edge::TRUE;
+            }
+            at_least
+                .range(threshold..)
+                .next()
+                .map_or(Edge::FALSE, |(_, &edge)| edge)
+        };
         let mut bounds = Vec::new();
         if lo > 0 {
-            bounds.push(outputs[usize::try_from(lo).ok()? - 1]);
+            bounds.push(reaches(lo));
         }
         if hi < n {
-            bounds.push(!outputs[usize::try_from(hi).ok()?]);
+            bounds.push(!reaches(hi + 1));
         }
         Some(self.aig.and_all(bounds))
     }
 
-    /// The booleans of a count and its constant part, if `id` is one: a sum (any tree of `+`)
-    /// of `b ? 1 : 0` (or `b ? 0 : 1`) terms and constants, as `count(…)` produces.
-    fn as_count(&self, id: TermId) -> Option<(Vec<Edge>, BigInt)> {
-        let mut bools = Vec::new();
+    /// The weighted booleans of a sum and its constant part, if `id` is one: any tree of `+`
+    /// over constants and `b ? x : y` terms with constant `x` and `y` (as `count(…)` and
+    /// filtered `sum(…)` produce), normalized to positive weights on `b` or `¬b`.
+    fn as_weighted_sum(&self, id: TermId) -> Option<(Vec<(Edge, u64)>, BigInt)> {
+        let mut terms = Vec::new();
         let mut offset = BigInt::zero();
         let mut pending = vec![id];
         while let Some(term) = pending.pop() {
@@ -313,42 +344,84 @@ impl Blaster<'_> {
                         Term::Const(Constant::Int(value)) => Some(value.clone()),
                         _ => None,
                     };
+                    let (x, y) = (value(*then)?, value(*otherwise)?);
                     let edge = self.of(*cond).edge();
-                    match (value(*then)?, value(*otherwise)?) {
-                        (one, zero) if one.is_one() && zero.is_zero() => bools.push(edge),
-                        (zero, one) if one.is_one() && zero.is_zero() => bools.push(!edge),
-                        _ => return None,
+                    // b ? x : y  =  y + (x - y)·b  =  x + (y - x)·¬b
+                    match x.cmp(&y) {
+                        std::cmp::Ordering::Equal => offset += x,
+                        std::cmp::Ordering::Greater => {
+                            terms.push((
+                                edge,
+                                u64::try_from(&x - &y).ok().filter(|&w| w <= MAX_WEIGHT)?,
+                            ));
+                            offset += y;
+                        }
+                        std::cmp::Ordering::Less => {
+                            terms.push((
+                                !edge,
+                                u64::try_from(&y - &x).ok().filter(|&w| w <= MAX_WEIGHT)?,
+                            ));
+                            offset += x;
+                        }
                     }
                 }
                 _ => return None,
             }
         }
-        (bools.len() >= 2).then_some((bools, offset))
+        (terms.len() >= 2).then_some((terms, offset))
     }
 
-    /// A totalizer (Bailleux and Boufkhad, 2003): `outputs[j]` holds exactly when at least
-    /// `j + 1` of `bools` hold, for `j < limit` (outputs beyond what a bound needs are left out).
-    fn totalizer(&mut self, bools: &[Edge], limit: usize) -> Vec<Edge> {
-        if bools.len() == 1 {
-            return bools.to_vec();
+    /// A generalized totalizer over `terms`: for every achievable partial sum `s` (capped at
+    /// `limit`), an edge that holds exactly when the sum is at least `s`. `None` when it would
+    /// take more than `budget` gates.
+    fn generalized_totalizer(
+        &mut self,
+        terms: &[(Edge, u64)],
+        limit: u64,
+        budget: &mut usize,
+    ) -> Option<BTreeMap<u64, Edge>> {
+        if let [(edge, weight)] = terms {
+            return Some(BTreeMap::from([((*weight).min(limit), *edge)]));
         }
-        let (left, right) = bools.split_at(bools.len() / 2);
-        let (left, right) = (self.totalizer(left, limit), self.totalizer(right, limit));
-        let size = (left.len() + right.len()).min(limit);
-        (1..=size)
-            .map(|total| {
-                let ways: Vec<Edge> = (0..=total.min(left.len()))
-                    .filter(|&i| total - i <= right.len())
-                    .map(|i| {
-                        let a = if i == 0 { Edge::TRUE } else { left[i - 1] };
-                        let j = total - i;
-                        let b = if j == 0 { Edge::TRUE } else { right[j - 1] };
-                        self.aig.and(a, b)
-                    })
-                    .collect();
-                self.aig.or_all(ways)
+        let (left, right) = terms.split_at(terms.len() / 2);
+        let left = self.generalized_totalizer(left, limit, budget)?;
+        let right = self.generalized_totalizer(right, limit, budget)?;
+        let sums: BTreeSet<u64> = std::iter::once(0)
+            .chain(left.keys().copied())
+            .flat_map(|a| {
+                std::iter::once(0)
+                    .chain(right.keys().copied())
+                    .map(move |b| (a + b).min(limit))
             })
-            .collect()
+            .filter(|&sum| sum > 0)
+            .collect();
+        let cost = sums.len().saturating_mul(left.len() + 1);
+        *budget = budget.checked_sub(cost)?;
+        let mut outputs = BTreeMap::new();
+        for sum in sums {
+            // sum_left + sum_right ≥ sum  ⇔  some achievable a has sum_left ≥ a and
+            // sum_right ≥ sum - a (the smallest achievable right sum that large).
+            // Left sums below `sum`, and the smallest one reaching it (the larger ones imply it).
+            let below = left.range(..sum).map(|(&a, &edge)| (a, edge));
+            let reaching = left.range(sum..).next().map(|(&a, &edge)| (a, edge));
+            let ways: Vec<Edge> = std::iter::once((0, Edge::TRUE))
+                .chain(below)
+                .chain(reaching)
+                .filter_map(|(a, left_edge)| {
+                    let right_edge = if a >= sum {
+                        Edge::TRUE
+                    } else {
+                        *right.range(sum - a..).next()?.1
+                    };
+                    Some((left_edge, right_edge))
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|(x, y)| self.aig.and(x, y))
+                .collect();
+            outputs.insert(sum, self.aig.or_all(ways));
+        }
+        Some(outputs)
     }
 
     /// `all_different(items)`: the conjunction of pairwise inequalities.
@@ -497,6 +570,97 @@ mod tests {
                             aig.simulate(&inputs).value(edge),
                             expected,
                             "n = {n}, k = {k}, op {op}, mask {mask:b}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod weighted_tests {
+    use super::*;
+    use crate::source::Span;
+
+    /// Weighted sums of `b ? x : y` terms (positive, zero, negative and equal arms) compared with
+    /// every bound, in both orientations, for every assignment: the generalized totalizer agrees
+    /// with arithmetic.
+    #[test]
+    fn weighted_sums_match_arithmetic() {
+        let mut state = 0x2545_F491_4F6C_DD1D_u64;
+        let mut next = |range: i64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            i64::try_from(state % u64::try_from(range).expect("positive")).expect("small")
+        };
+        for _ in 0..60 {
+            let n = 2 + usize::try_from(next(4)).expect("small");
+            let arms: Vec<(i64, i64)> = (0..n).map(|_| (next(9) - 2, next(5) - 2)).collect();
+            let (lowest, highest): (i64, i64) = arms
+                .iter()
+                .fold((0, 0), |(lo, hi), &(x, y)| (lo + x.min(y), hi + x.max(y)));
+            for k in lowest - 1..=highest + 1 {
+                for op in 0..5 {
+                    let mut store = TermStore::default();
+                    let bools: Vec<TermId> = (0..n)
+                        .map(|i| {
+                            store.new_unknown(
+                                format!("b{i}"),
+                                Sort::Bool,
+                                Interval::full(),
+                                Span::default(),
+                            )
+                        })
+                        .collect();
+                    let terms: Vec<TermId> = bools
+                        .iter()
+                        .zip(&arms)
+                        .map(|(&b, &(x, y))| {
+                            let (x, y) = (store.int(BigInt::from(x)), store.int(BigInt::from(y)));
+                            store.ite(b, x, y)
+                        })
+                        .collect();
+                    let sum = terms[1..]
+                        .iter()
+                        .fold(terms[0], |sum, &term| store.add(sum, term));
+                    let bound = store.int(BigInt::from(k));
+                    let comparison = match op {
+                        0 => store.eq(sum, bound),
+                        1 => store.le(sum, bound),
+                        2 => store.lt(sum, bound),
+                        3 => store.le(bound, sum),
+                        _ => store.lt(bound, sum),
+                    };
+                    let domains = vec![Interval::full(); store.unknowns().len()];
+                    let sizes = domain::forward_sizes(&store, &domains);
+                    let mut aig = Aig::new();
+                    let blasted = blast(&store, &sizes, &domains, &[comparison], &mut aig);
+                    let edge = blasted.of(comparison).edge();
+                    // A boolean whose arms are equal folds away and gets no circuit input.
+                    let used: Vec<usize> = (0..n)
+                        .filter(|&i| blasted.get(bools[i]).is_some())
+                        .collect();
+                    for mask in 0..1_u32 << n {
+                        let values: Vec<bool> = (0..n).map(|i| mask >> i & 1 == 1).collect();
+                        let inputs: Vec<bool> = used.iter().map(|&i| values[i]).collect();
+                        let value: i64 = arms
+                            .iter()
+                            .zip(&values)
+                            .map(|(&(x, y), &b)| if b { x } else { y })
+                            .sum();
+                        let expected = match op {
+                            0 => value == k,
+                            1 => value <= k,
+                            2 => value < k,
+                            3 => k <= value,
+                            _ => k < value,
+                        };
+                        assert_eq!(
+                            aig.simulate(&inputs).value(edge),
+                            expected,
+                            "arms {arms:?}, k = {k}, op {op}, mask {mask:b}"
                         );
                     }
                 }

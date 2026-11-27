@@ -641,8 +641,16 @@ choice below was **measured** with the benchmark suite in `bench/` (`bench/run.s
   Unit propagation then enforces the bound on its own (arc consistency). On N-Queens over a
   30×30 Boolean board the CNF shrank from 29,396 variables and 84,944 clauses to 4,148 and 9,978,
   and solving went from 398 ms to 40 ms. A 14-nurse roster went from 414 ms to 277 ms. Bounds
-  that are trivially true or false are decided outright, and very large totalizers
-  (n·k > 200,000) fall back to the binary sum.
+  that are trivially true or false are decided outright.
+- **Weighted sums** compared with a constant (`sum(w[i] for i … if b[i]) <= K`) use the same
+  machinery generalized to weights (GTE: Joshi, Martins and Manquinho, CP 2015), whose nodes
+  keep one output per achievable partial sum. Counts are the unit-weight case and produce
+  exactly the totalizer. Weighted sums get it only while it stays within 8× the binary
+  encoding's size, because its size grows with the number of distinct partial sums. Measured:
+  on the 30- and 50-item knapsacks (weights up to 54, capacity 300) it made the CNF 40–80×
+  larger and solving 7–27× slower, the "large weights favor binary" effect reported by
+  Ulrich-Oltean, Nightingale and Walker (Constraints 2023), so they keep the binary sum. The
+  small knapsack example's CNF shrinks from 408 to 87 clauses.
 - **Division** by a constant power of two is a bit slice; other divisions are relational.
 - **Two-level AIG rewriting.** Creating `a ∧ b` applies the local rules of Brummayer and
   Biere ("Local Two-Level And-Inverter Graph Minimization without Blowup", 2006):

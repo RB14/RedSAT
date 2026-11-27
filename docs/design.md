@@ -663,6 +663,14 @@ choice below was **measured** with the benchmark suite in `bench/` (`bench/run.s
     1.41×). With `x % 7 == 3`, the relational form lets the solver choose `q` and compute `x`;
     the residue circuit turns it into a parity-like search over `x`'s bits, which CDCL handles
     poorly. Requiring both forms to agree did not help either (1.19× slower).
+- **Multiplication** is an array multiplier: one ripple-carry row per bit of the multiplier.
+  - *Measured and rejected: a column-compression (Wallace-style) tree* (every partial product in
+    its column, full adders compressing three bits at a time, one final ripple adder). It has
+    the same number of full adders, so the same circuit size, wired differently. On 12 random
+    10-digit semiprimes the run times ranged from 4× faster to 3.2× slower per instance, with a
+    geometric mean of 1.05 (total 20.5 s against 19.8 s). Factoring times are heavy-tailed, so
+    single instances say little: the benchmark suite's five factorings alone suggested an 8×
+    gain on one and an 18× loss on another.
 - **Two-level AIG rewriting.** Creating `a ∧ b` applies the local rules of Brummayer and
   Biere ("Local Two-Level And-Inverter Graph Minimization without Blowup", 2006):
   contradiction, idempotence, subsumption, substitution and resolution across two levels. CNF

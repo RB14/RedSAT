@@ -1,0 +1,6 @@
+error: unknown operator `&&`
+ --> syntax_word_operators.rsat:2:11
+  |
+2 | require p && q
+  |           ^^
+  = help: RedSAT spells it `and`

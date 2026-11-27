@@ -1,0 +1,4 @@
+var x: int[0..=100]
+var y: int[0..=100]
+require x + y == 42 and x == 2 * y
+solve x, y

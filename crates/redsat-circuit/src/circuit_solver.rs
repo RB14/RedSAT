@@ -49,7 +49,18 @@ impl<S: Solver> CircuitSolver<S> {
 
     /// Searches for an assignment of the circuit inputs that satisfies all requirements.
     pub fn solve(&mut self) -> SolveResult {
-        let result = self.solver.solve();
+        self.solve_assuming(&[])
+    }
+
+    /// Like [`solve`](Self::solve), but additionally requires `assumptions` for this call only.
+    /// For example, an optimizer can ask "is there a solution better than the current one?"
+    /// without making the question permanent.
+    pub fn solve_assuming(&mut self, assumptions: &[Edge]) -> SolveResult {
+        let lits: Vec<_> = assumptions
+            .iter()
+            .map(|&edge| self.encoder.literal(&self.aig, edge, &mut self.solver))
+            .collect();
+        let result = self.solver.solve_with(&lits);
         self.model = (result == SolveResult::Sat).then(|| self.read_model());
         result
     }

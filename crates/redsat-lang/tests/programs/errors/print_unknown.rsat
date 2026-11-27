@@ -1,0 +1,3 @@
+var x: int[0..=9]
+require x > 4
+print "x is {x}"

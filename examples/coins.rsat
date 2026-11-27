@@ -1,0 +1,14 @@
+// Make change for 289 cents with as few coins as possible (quarters, dimes, nickels, pennies).
+//
+// `minimize` finds an optimal solution; `solve all … minimize` would list every optimal one.
+
+var amount = 289
+var quarters, dimes, nickels, pennies
+
+require quarters >= 0 and dimes >= 0 and nickels >= 0 and pennies >= 0
+require 25 * quarters + 10 * dimes + 5 * nickels + pennies == amount
+
+var coins = quarters + dimes + nickels + pennies
+solve quarters, dimes, nickels, pennies minimize coins {
+    print "{amount}¢ = {quarters} quarters + {dimes} dimes + {nickels} nickels + {pennies} pennies ({coins} coins)"
+}

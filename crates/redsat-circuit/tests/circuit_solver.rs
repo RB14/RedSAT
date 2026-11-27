@@ -119,3 +119,36 @@ fn solves_with_negative_numbers() {
     pairs.sort_unstable();
     assert_eq!(pairs, [(-6, 2), (-4, 3), (-3, 4), (-2, 6)]);
 }
+
+#[test]
+fn assumptions_hold_for_one_call_only() {
+    // x ∈ [0, 15]; minimise x > 5 by temporarily asking for something smaller each time.
+    let mut cs = CircuitSolver::new(Cadical::new());
+    let aig = cs.aig_mut();
+    let x = IntVec::new_input(
+        aig,
+        Layout {
+            width: 4,
+            signed: false,
+        },
+    );
+    let above_five = int::lt(aig, &IntVec::constant(&BigInt::from(5)), &x);
+    cs.require(above_five);
+
+    assert_eq!(cs.solve(), SolveResult::Sat);
+    let mut best = cs.value_of(&x);
+    loop {
+        let bound = IntVec::constant(&best);
+        let better = int::lt(cs.aig_mut(), &x, &bound);
+        match cs.solve_assuming(&[better]) {
+            SolveResult::Sat => best = cs.value_of(&x),
+            _ => break,
+        }
+    }
+    assert_eq!(best, BigInt::from(6));
+    assert_eq!(
+        cs.solve(),
+        SolveResult::Sat,
+        "the failed assumption left no trace"
+    );
+}

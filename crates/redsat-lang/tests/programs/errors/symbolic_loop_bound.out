@@ -1,0 +1,5 @@
+error: a range bound must be known at compile time
+ --> symbolic_loop_bound.rsat:2:13
+  |
+2 | for i in 0..n {
+  |             ^ this depends on unknowns

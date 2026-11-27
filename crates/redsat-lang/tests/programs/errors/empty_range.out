@@ -1,0 +1,6 @@
+error: the range `5..5` contains no values
+ --> empty_range.rsat:1:16
+  |
+1 | var digit: int[5..5]
+  |                ^^^^
+  = note: `lo..hi` excludes `hi`, while `lo..=hi` includes it

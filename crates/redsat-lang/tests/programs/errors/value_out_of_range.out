@@ -1,0 +1,5 @@
+error: 10 is outside the declared range [0, 9]
+ --> value_out_of_range.rsat:1:25
+  |
+1 | var level: int[0..10] = 10
+  |                         ^^

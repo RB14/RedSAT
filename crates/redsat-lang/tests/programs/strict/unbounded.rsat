@@ -1,0 +1,3 @@
+var x: int
+require x > 5
+solve x

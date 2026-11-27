@@ -1,0 +1,3 @@
+var flag: bool
+var n = 3
+require flag + n > 2

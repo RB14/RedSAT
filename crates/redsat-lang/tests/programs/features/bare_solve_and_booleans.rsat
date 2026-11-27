@@ -1,0 +1,5 @@
+// Exactly one of three switches is on, and the first one is off.
+var s1, s2, s3: bool
+require not s1
+require (s1 xor s2 xor s3) and not (s1 and s2 and s3)
+solve all

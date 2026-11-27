@@ -1,0 +1,14 @@
+error: `x` needs a type annotation
+ --> needs_annotation.rsat:1:5
+  |
+1 | var x, y
+  |     ^ no type given
+  = note: required by the compiler option explicit-types = "unknowns"
+  = help: annotate it, e.g. `var x: int`
+error: `y` needs a type annotation
+ --> needs_annotation.rsat:1:8
+  |
+1 | var x, y
+  |        ^ no type given
+  = note: required by the compiler option explicit-types = "unknowns"
+  = help: annotate it, e.g. `var x: int`

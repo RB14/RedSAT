@@ -1,0 +1,7 @@
+error: cannot infer a finite domain for `x`
+ --> unbounded.rsat:1:5
+  |
+1 | var x: int
+  |     ^ unbounded
+  = note: required by the compiler option unbounded-ints = "error"
+  = help: give it bounds, e.g. `var x: int[0..=1000]`, or a constraint that limits it

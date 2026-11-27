@@ -1,0 +1,6 @@
+error: cannot infer the type of `mystery`
+ --> cannot_infer.rsat:1:5
+  |
+1 | var mystery
+  |     ^^^^^^^ declared here
+  = help: use it in a way that determines its type, or annotate it: `var mystery: int` or `var mystery: bool`

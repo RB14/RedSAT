@@ -1,0 +1,17 @@
+// Pythagorean triples: right triangles with whole-number sides, a² + b² = c².
+//
+// `solve all` enumerates every solution; the body runs once per triple and may update
+// ordinary variables, like the counter below.
+
+var limit = 30
+var a, b, c: int[1..=limit]
+
+require a < b                  // each triangle once
+require a * a + b * b == c * c
+
+var count = 0
+solve all a, b, c {
+    print "{a}² + {b}² = {c}²"
+    count = count + 1
+}
+print "{count} triples with sides up to {limit}"

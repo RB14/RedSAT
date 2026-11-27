@@ -1,0 +1,18 @@
+// Factoring: find the two prime factors of a semiprime.
+//
+// Multiplying is easy; going backwards is hard. The compiler turns `x * y == n` into a
+// multiplier circuit and the SAT solver runs it backwards. Nothing here mentions bits: the
+// domains of x and y are inferred from the constraints.
+
+var n = 4295229443             // = 65537 × 65539
+var x, y
+
+require x > 1 and y > 1        // rule out the trivial 1 × n
+require x <= y                 // symmetry breaking: each pair once
+require x * y == n
+
+solve x, y {
+    print "{n} = {x} × {y}"
+} else {
+    print "{n} is prime"
+}

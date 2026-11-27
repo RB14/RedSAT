@@ -1,0 +1,16 @@
+// Two numbers between 0 and 100 add up to 50, and the bigger one is 42. What are they?
+//
+// Ordinary imperative code works on unknowns: whether `b > a` holds is not known at compile
+// time, so both branches are encoded and `biggest` becomes "b if b > a, otherwise a".
+
+var a, b: int[0..=100]
+
+var biggest = a
+if b > a {
+    biggest = b
+}
+
+require biggest == 42
+require a + b == 50
+
+solve all a, b

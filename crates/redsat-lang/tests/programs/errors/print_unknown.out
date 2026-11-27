@@ -1,0 +1,6 @@
+error: this value depends on unknowns, so it cannot be shown here
+ --> print_unknown.rsat:3:14
+  |
+3 | print "x is {x}"
+  |              ^
+  = help: print it inside a `solve` body, where every unknown has a value

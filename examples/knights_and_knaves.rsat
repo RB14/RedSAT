@@ -1,0 +1,17 @@
+// Knights always tell the truth, knaves always lie.
+//
+// A says: "B is a knave."
+// B says: "A and I are of the same kind."
+// Who is what? A statement is true exactly when its speaker is a knight, so each
+// statement becomes `speaker iff claim`.
+
+var a_is_knight, b_is_knight: bool
+
+require a_is_knight iff not b_is_knight
+require b_is_knight iff (a_is_knight iff b_is_knight)
+
+solve unique a_is_knight, b_is_knight {
+    // Inside a solve body every value is known, so this `if` is ordinary code.
+    if a_is_knight { print "A is a knight" } else { print "A is a knave" }
+    if b_is_knight { print "B is a knight" } else { print "B is a knave" }
+}

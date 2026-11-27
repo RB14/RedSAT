@@ -1,0 +1,14 @@
+// Which numbers up to 50 are a sum of two squares, total = a² + b²?
+//
+// a and b are auxiliary witnesses: they only have to exist. Because only `total` is listed
+// after `solve all`, each total is reported once, however many (a, b) pairs produce it.
+
+var total: int[1..=50]
+var a, b
+require a * a + b * b == total
+
+var found = 0
+solve all total {
+    found = found + 1
+}
+print "{found} numbers up to 50 are sums of two squares"

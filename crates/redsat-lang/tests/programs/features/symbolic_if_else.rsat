@@ -1,0 +1,16 @@
+// A tax table: 1 per unit of income below 1000, 2 per unit up to 5000, and a surcharge of
+// 500 above that. Which income pays exactly 9000? The `if` depends on the unknown income, so
+// all three branches are encoded and `tax` is merged from them.
+var income: int[0..=10000]
+var tax = 0
+if income < 1000 {
+    tax = income
+} else if income <= 5000 {
+    tax = 2 * income
+} else {
+    tax = 2 * income + 500
+}
+require tax == 9000
+solve all income {
+    print "income {income} pays {tax}"
+}

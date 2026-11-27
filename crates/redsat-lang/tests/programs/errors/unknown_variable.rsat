@@ -1,0 +1,3 @@
+var x: int[0..=9]
+require x + z > 3
+solve x

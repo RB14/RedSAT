@@ -59,3 +59,21 @@ pub trait Solver: ClauseSink {
     /// whether it belongs to the reported unsat core.
     fn failed(&self, lit: Lit) -> bool;
 }
+
+impl<S: Solver + ?Sized> Solver for Box<S> {
+    fn name(&self) -> &'static str {
+        (**self).name()
+    }
+
+    fn solve_with(&mut self, assumptions: &[Lit]) -> SolveResult {
+        (**self).solve_with(assumptions)
+    }
+
+    fn value(&self, lit: Lit) -> bool {
+        (**self).value(lit)
+    }
+
+    fn failed(&self, lit: Lit) -> bool {
+        (**self).failed(lit)
+    }
+}

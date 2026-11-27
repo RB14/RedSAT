@@ -1,0 +1,15 @@
+// Pell's equation x² − 2y² = 1 has infinitely many integer solutions.
+//
+// Nothing bounds x and y here, so the compiler cannot infer finite domains. By default it
+// warns and searches with growing bounds (iterative deepening); with `strict = true` in a
+// redsat.toml (or `--strict`) this program is rejected instead.
+//
+// Only two solutions are requested: they grow exponentially (3, 17, 99, 577, 3363, …) and
+// multiplication puzzles over wide numbers are hard for SAT solvers.
+
+var x, y: int
+
+require y > 0
+require x * x - 2 * y * y == 1
+
+solve all x, y limit 2

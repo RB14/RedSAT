@@ -1,0 +1,8 @@
+x = 3, y = 2
+x = 17, y = 12
+warning: could not infer bounds for `x`, `y`; searched |value| < 2^32
+  --> pell.rsat:10:5
+   |
+10 | var x, y: int
+   |     ^
+   = help: add bounds (e.g. `int[0..=1000]`) for a complete search

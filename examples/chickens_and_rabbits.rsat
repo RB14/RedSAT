@@ -1,0 +1,14 @@
+// A farmer counts 35 heads and 94 legs among chickens and rabbits. How many of each?
+//
+// No bounds are declared: from `chickens + rabbits == heads` and both being non-negative,
+// the compiler infers that each is at most 35, and sizes the circuit accordingly.
+
+var heads = 35
+var legs = 94
+var chickens, rabbits
+
+require chickens >= 0 and rabbits >= 0
+require chickens + rabbits == heads
+require 2 * chickens + 4 * rabbits == legs
+
+solve unique chickens, rabbits

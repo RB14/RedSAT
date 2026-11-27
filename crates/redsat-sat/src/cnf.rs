@@ -21,6 +21,24 @@ pub trait ClauseSink {
     fn num_clauses(&self) -> usize;
 }
 
+impl<S: ClauseSink + ?Sized> ClauseSink for Box<S> {
+    fn new_var(&mut self) -> Var {
+        (**self).new_var()
+    }
+
+    fn add_clause(&mut self, clause: &[Lit]) {
+        (**self).add_clause(clause);
+    }
+
+    fn num_vars(&self) -> u32 {
+        (**self).num_vars()
+    }
+
+    fn num_clauses(&self) -> usize {
+        (**self).num_clauses()
+    }
+}
+
 /// A formula in conjunctive normal form, held in memory.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Cnf {

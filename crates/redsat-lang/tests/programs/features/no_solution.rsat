@@ -1,0 +1,6 @@
+var x: int[0..=9]
+require x * x == 50
+solve x
+solve x else {
+    print "50 is not a perfect square"
+}

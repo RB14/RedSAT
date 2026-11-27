@@ -1,0 +1,5 @@
+error: expected `int`, found `bool`
+ --> type_mismatch.rsat:3:9
+  |
+3 | require flag + n > 2
+  |         ^^^^ this is `bool`

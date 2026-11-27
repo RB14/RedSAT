@@ -1,0 +1,1 @@
+var level: int[0..10] = 10

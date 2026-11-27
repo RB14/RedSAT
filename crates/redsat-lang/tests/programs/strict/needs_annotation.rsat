@@ -1,0 +1,3 @@
+var x, y
+var n = 42
+require x + y == n

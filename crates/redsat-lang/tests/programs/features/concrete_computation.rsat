@@ -1,0 +1,7 @@
+// Everything here is known at compile time: plain computation.
+var n = 2 ^ 70
+print "2^70 = {n}"
+print "-7 / 2 =", -7 / 2, "and -7 % 2 =", -7 % 2
+print "escapes: \{braces\} \"quotes\" tab\there"
+var hex = 0xff + 0b1010 + 1_000
+print hex, hex > 1000, not (hex > 1000)

@@ -1,0 +1,9 @@
+// Every way to split 10 into two non-negative parts with the largest product.
+var p, q: int[0..=10]
+require p + q == 10
+solve all p, q maximize p * q
+// …and the smallest product among parts that are at least 2.
+require p >= 2 and q >= 2
+solve p, q minimize p * q {
+    print "smallest product with parts ≥ 2: {p} × {q} = {p * q}"
+}

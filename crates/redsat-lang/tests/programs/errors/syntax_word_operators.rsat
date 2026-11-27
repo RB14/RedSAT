@@ -1,0 +1,2 @@
+var p, q: bool
+require p && q

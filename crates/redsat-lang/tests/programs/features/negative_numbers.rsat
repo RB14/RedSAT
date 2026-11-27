@@ -1,0 +1,7 @@
+var a, b: int[-10..=10]
+require a * b == -12
+require a < b
+require abs(a) + abs(b) == 7
+solve all a, b {
+    print "{a} × {b} = {a * b}, min = {min(a, b)}, max = {max(a, b)}"
+}

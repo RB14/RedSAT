@@ -1,0 +1,6 @@
+error: unknown variable `z`
+ --> unknown_variable.rsat:2:13
+  |
+2 | require x + z > 3
+  |             ^ not declared
+  = help: declare it first, e.g. `var z: int`

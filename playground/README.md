@@ -39,8 +39,13 @@ only the page (into `dist/`).
 | `src/rsat-language.js` | RedSAT highlighting, indentation and completion, built from the compiler's `vocabulary()`. |
 | `scripts/examples.mjs` | Turns `../examples/*.rsat` into `examples.json`, in the curated order with titles. New examples appear automatically. |
 
-GitHub Pages deployment (playground at the site root, the user guide under `/guide/`) is in
-`.github/workflows/pages.yml`.
+## Deploying
+
+`npm run deploy` builds everything (the compiler, the solvers, the page and the guide), copies
+it into its own folder of the GitHub Pages repository (`RB14/RB14.github.io`, folder `redsat/`),
+commits and pushes. The playground is then at <https://rb14.github.io/redsat/> and the guide at
+<https://rb14.github.io/redsat/guide/>. `--no-build` publishes the current `dist/` and
+`--dry-run` stops before pushing. Other projects in that repository are left alone.
 
 ## Solvers
 

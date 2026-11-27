@@ -28,14 +28,15 @@ $ redsat examples/factor.rsat
 
 ## Try it
 
-- **In your browser:** the [playground](playground/) runs the compiler and its SAT solvers as
-  WebAssembly, with nothing to install. It is deployed to GitHub Pages by
-  [`.github/workflows/pages.yml`](.github/workflows/pages.yml): the playground sits at the
-  site root and the guide under `/guide/`.
-- **Learn the language:** the [RedSAT Guide](docs/guide/src/introduction.md) is a tutorial,
-  a cookbook of modelling patterns and a complete reference. Every code sample in it is tested.
-- **Why it works the way it does:** the [design document](docs/design.md) covers the
-  semantics, the encodings (with measurements) and the architecture.
+- ▶️ **[Open the playground](https://rb14.github.io/redsat/).** Edit and run programs in your
+  browser; nothing to install. The compiler and the SAT solvers (CaDiCaL, MiniSat and RedSAT's
+  own) run on your device as WebAssembly.
+- 📖 **[Read the RedSAT Guide](https://rb14.github.io/redsat/guide/).** It has a tutorial, a
+  cookbook of modelling patterns and a complete reference. Every code sample in it is tested
+  against the compiler. The [documentation index](#documentation) below links each chapter's
+  source in this repository.
+- 🧠 **[Read the design document](docs/design.md)** for why the language works the way it does:
+  the semantics, the encodings (with measurements) and the architecture.
 
 ## What you get
 
@@ -135,12 +136,42 @@ Each example explains its problem in plain words at the top and shows its output
 | [`palindromes.rsat`](examples/palindromes.rsat) | strings of unknown characters |
 | [`bits.rsat`](examples/bits.rsat) | bitwise operators, the standard library's `bit` and `popcount` |
 
+## Documentation
+
+The [RedSAT Guide](https://rb14.github.io/redsat/guide/) is the place to learn the language.
+Its chapters are Markdown files in [`docs/guide/src/`](docs/guide/src/), so you can also read
+them right here:
+
+| Part | Chapters |
+|---|---|
+| **Getting started** | [Introduction](docs/guide/src/introduction.md) · [Installation](docs/guide/src/getting-started/installation.md) · [Your first program](docs/guide/src/getting-started/first-program.md) · [Running programs](docs/guide/src/getting-started/running.md) · [The REPL](docs/guide/src/getting-started/repl.md) · [Editor support](docs/guide/src/getting-started/editor.md) |
+| **Learn RedSAT** | [Knowns and unknowns](docs/guide/src/learn/knowns-and-unknowns.md) · [Requirements and solving](docs/guide/src/learn/solving.md) · [Types](docs/guide/src/learn/types.md) · [Expressions and operators](docs/guide/src/learn/expressions.md) · [Control flow over unknowns](docs/guide/src/learn/control-flow.md) · [Functions](docs/guide/src/learn/functions.md) · [Imports](docs/guide/src/learn/imports.md) · [Optimization](docs/guide/src/learn/optimization.md) · [When there is no solution](docs/guide/src/learn/no-solution.md) |
+| **Cookbook** | [How to model a problem](docs/guide/src/cookbook/modelling.md) · [Logic puzzles](docs/guide/src/cookbook/logic-puzzles.md) · [Grid puzzles](docs/guide/src/cookbook/grid-puzzles.md) · [Number puzzles](docs/guide/src/cookbook/number-puzzles.md) · [Graph colouring](docs/guide/src/cookbook/graph-colouring.md) · [Knapsack and optimization](docs/guide/src/cookbook/knapsack.md) · [Scheduling](docs/guide/src/cookbook/scheduling.md) · [Counting constraints](docs/guide/src/cookbook/counting.md) · [Symmetry breaking](docs/guide/src/cookbook/symmetry.md) |
+| **Reference** | [Lexical structure](docs/guide/src/reference/lexical.md) · [Statements](docs/guide/src/reference/statements.md) · [Types](docs/guide/src/reference/types.md) · [Expressions and operators](docs/guide/src/reference/expressions.md) · [Built-in functions](docs/guide/src/reference/builtins.md) · [Standard library](docs/guide/src/reference/standard-library.md) · [Command line](docs/guide/src/reference/cli.md) · [Configuration](docs/guide/src/reference/configuration.md) · [Diagnostics](docs/guide/src/reference/diagnostics.md) |
+| **Under the hood** | [How RedSAT works](docs/guide/src/under-the-hood/pipeline.md) · [Performance tips](docs/guide/src/under-the-hood/performance.md) · [FAQ](docs/guide/src/faq.md) · [Keeping the docs up to date](docs/guide/src/maintaining.md) |
+
+More documentation:
+- [`docs/design.md`](docs/design.md): the design, semantics, encodings and architecture.
+- [`playground/README.md`](playground/README.md): how the web playground is built and deployed.
+- [`editors/vscode/README.md`](editors/vscode/README.md): the VS Code extension.
+
+To read the guide offline: `cargo install mdbook && mdbook serve docs/guide`.
+
 ## Editor support
 
 [`editors/vscode/`](editors/vscode/) is a VS Code extension. It highlights `.rsat` files and
-```` ```rsat ```` blocks in Markdown, has snippets, and runs the language server (`redsat lsp`)
-for live diagnostics, completion, hovers and inlay hints with each unknown's inferred domain,
-go-to-definition and an outline. See its README for building and installing it.
+```` ```rsat ```` blocks in Markdown, has snippets, and runs the language server (`redsat lsp`).
+The server gives you:
+- live diagnostics;
+- completion of names, struct fields and enum variants;
+- standard-library and built-in functions with parameter placeholders and docs;
+- signature help while you type arguments;
+- hovers and inlay hints with each unknown's inferred domain;
+- go-to-definition and an outline.
+
+To install it, download the `.vsix` from the [latest release](https://github.com/RB14/RedSAT/releases)
+and run `code --install-extension redsat-*.vsix`, with `redsat` on your PATH. See its README to
+build it yourself.
 
 ## Repository layout
 

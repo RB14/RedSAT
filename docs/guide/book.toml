@@ -5,6 +5,10 @@ language = "en"
 src = "src"
 
 [output.html]
+# Published at https://rb14.github.io/redsat/guide/ (see playground/scripts/deploy.mjs).
+site-url = "/redsat/guide/"
+git-repository-url = "https://github.com/RB14/RedSAT"
+edit-url-template = "https://github.com/RB14/RedSAT/edit/main/docs/guide/{path}"
 default-theme = "light"
 preferred-dark-theme = "navy"
 # highlight.js does not know RedSAT: this registers the language (see the file for details).

@@ -20,7 +20,7 @@ use redsat_lang::{
     Answer, AskFn, CompilerOptions, ExplicitTypes, Hooks, OptionLayer, SourceFile, TraceFn,
     UnboundedInts,
 };
-use redsat_sat::{Cadical, Cdcl, SolveResult, Solver, dimacs};
+use redsat_sat::{Cadical, Cdcl, Portfolio, SolveResult, Solver, dimacs};
 
 /// RedSAT: declarative programming by reduction to SAT.
 ///
@@ -59,6 +59,35 @@ struct Cli {
     /// The SAT solver: `cadical` (fast, the default) or `builtin` (RedSAT's own, pure Rust).
     #[arg(long, value_name = "cadical|builtin", default_value = "cadical", value_parser = ["cadical", "builtin"])]
     solver: String,
+
+    /// How many threads solve each SAT problem: a portfolio of differently configured solvers
+    /// races, and the first answer wins. `1` solves on one thread.
+    #[arg(short = 'j', long, value_name = "N", default_value_t = default_threads())]
+    threads: usize,
+}
+
+/// The default `--threads`: the machine's parallelism, at most 4 (beyond that, more of the same
+/// solver rarely pays off without clause sharing).
+fn default_threads() -> usize {
+    std::thread::available_parallelism().map_or(1, |n| n.get().min(4))
+}
+
+/// Creates solvers: one `solver` (`cadical` or `builtin`), or a portfolio of `threads` of them.
+fn solver_factory(solver: &str, threads: usize) -> impl Fn() -> Box<dyn Solver> + Sync + use<> {
+    let builtin = solver == "builtin";
+    let threads = threads.max(1);
+    move || -> Box<dyn Solver> {
+        Box::new(Portfolio::new(
+            threads,
+            move |member| -> Box<dyn Solver + Send> {
+                if builtin {
+                    Box::new(Cdcl::with_seed(u64::from(member)))
+                } else {
+                    Box::new(Cadical::diversified(member))
+                }
+            },
+        ))
+    }
 }
 
 #[derive(Subcommand)]
@@ -216,14 +245,7 @@ fn report(outcome: &redsat_lang::RunOutcome) {
 
 fn run(file: &Path, cli: &Cli) -> Result<ExitCode, Box<dyn Error>> {
     let (source, options) = prepare(file, &cli.options)?;
-    let builtin = cli.solver == "builtin";
-    let factory = move || -> Box<dyn Solver> {
-        if builtin {
-            Box::new(Cdcl::new())
-        } else {
-            Box::new(Cadical::new())
-        }
-    };
+    let factory = solver_factory(&cli.solver, cli.threads);
     let mut out = io::stdout();
     let ask = |shown: u64| {
         let _ = io::stdout().flush();

@@ -12,10 +12,12 @@ pub mod solver;
 #[cfg(feature = "cadical")]
 pub mod cadical;
 pub mod cdcl;
+pub mod portfolio;
 
 #[cfg(feature = "cadical")]
 pub use cadical::Cadical;
 pub use cdcl::Cdcl;
 pub use cnf::{ClauseSink, Cnf};
 pub use lit::{Lit, Var};
-pub use solver::{SolveResult, Solver};
+pub use portfolio::Portfolio;
+pub use solver::{Interrupter, SolveResult, Solver};

@@ -58,7 +58,18 @@ pub trait Solver: ClauseSink {
     /// Whether the assumption `lit` was needed to derive the last [`SolveResult::Unsat`], i.e.
     /// whether it belongs to the reported unsat core.
     fn failed(&self, lit: Lit) -> bool;
+
+    /// A handle that stops a [`solve_with`](Solver::solve_with) running on another thread; that
+    /// call then returns [`SolveResult::Unknown`] and the solver stays usable. A stop that
+    /// arrives before the call has started may be ignored. `None` if the backend cannot be
+    /// stopped.
+    fn interrupter(&mut self) -> Option<Interrupter> {
+        None
+    }
 }
+
+/// Stops a running solve from another thread (see [`Solver::interrupter`]).
+pub type Interrupter = Box<dyn Fn() + Send + Sync>;
 
 impl<S: Solver + ?Sized> Solver for Box<S> {
     fn name(&self) -> &'static str {
@@ -75,5 +86,9 @@ impl<S: Solver + ?Sized> Solver for Box<S> {
 
     fn failed(&self, lit: Lit) -> bool {
         (**self).failed(lit)
+    }
+
+    fn interrupter(&mut self) -> Option<Interrupter> {
+        (**self).interrupter()
     }
 }

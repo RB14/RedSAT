@@ -3,9 +3,9 @@
 
 use std::collections::HashSet;
 
-use rustsat::solvers::{Solve, SolveIncremental, SolverResult};
+use rustsat::solvers::{Interrupt, InterruptSolver, Solve, SolveIncremental, SolverResult};
 use rustsat::types::{Lit as RsLit, TernaryVal};
-use rustsat_cadical::CaDiCaL;
+use rustsat_cadical::{CaDiCaL, Config};
 
 use crate::{ClauseSink, Lit, SolveResult, Solver, Var};
 
@@ -35,6 +35,33 @@ impl Cadical {
             has_model: false,
             failed: HashSet::new(),
         }
+    }
+
+    /// A solver that searches differently from [`Cadical::new`], for portfolios. Member 0 is the
+    /// default configuration; the others vary CaDiCaL's preset (aimed at satisfiable or
+    /// unsatisfiable instances), the random seed, the initial phase and variable shuffling, the
+    /// usual ways to diversify a portfolio.
+    #[must_use]
+    pub fn diversified(member: u32) -> Self {
+        let mut solver = Self::new();
+        if member == 0 {
+            return solver;
+        }
+        let config = match member % 3 {
+            0 => Config::Default,
+            1 => Config::Sat,
+            _ => Config::Unsat,
+        };
+        let inner = &mut solver.inner;
+        let _ = inner.set_configuration(config);
+        let seed = i32::try_from(member).unwrap_or(i32::MAX);
+        let _ = inner.set_option("seed", seed);
+        let _ = inner.set_option("phase", i32::from(member % 2 == 0));
+        if member >= 3 {
+            let _ = inner.set_option("shuffle", 1);
+            let _ = inner.set_option("shufflerandom", 1);
+        }
+        solver
     }
 
     fn mention(&mut self, lits: &[Lit]) {
@@ -141,6 +168,11 @@ impl Solver for Cadical {
 
     fn failed(&self, lit: Lit) -> bool {
         self.failed.contains(&lit)
+    }
+
+    fn interrupter(&mut self) -> Option<crate::Interrupter> {
+        let interrupter = self.inner.interrupter();
+        Some(Box::new(move || interrupter.interrupt()))
     }
 }
 

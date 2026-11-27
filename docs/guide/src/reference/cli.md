@@ -29,6 +29,7 @@ and 1 otherwise. A `solve` without a solution is not an error.
 | `-v`, `--verbose`            | Report progress to standard error as it happens (see below).           |
 | `--interactive`              | Pause after each solution of every `solve`: Enter shows the next one, `a` (or `all`) all the remaining ones, and `q` (or `quit`) stops enumerating that `solve`. End of input counts as `q`. |
 | `--solver <cadical\|builtin>` | The SAT solver: `cadical` (the default) or `builtin`, RedSAT's own CDCL solver written in Rust. Both give correct answers; `builtin` is slower. |
+| `-j, --threads <N>` | How many threads may work on a hard SAT problem (default: the number of cores, at most 4). Differently configured solvers race and the first answer wins; easy problems are solved on one thread. With several threads, which of several valid solutions is found can vary from run to run: use `-j 1` for reproducible output. |
 
 It also accepts the compiler options below.
 

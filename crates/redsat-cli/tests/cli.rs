@@ -27,7 +27,7 @@ fn running_a_file_prints_its_output() {
 #[test]
 fn verbose_reports_each_phase() {
     let output = Command::new(env!("CARGO_BIN_EXE_redsat"))
-        .args(["--verbose", "--solver", "builtin"])
+        .args(["--verbose", "--solver", "builtin", "--threads", "1"])
         .arg(example("sudoku.rsat"))
         .output()
         .expect("redsat runs");

@@ -653,6 +653,7 @@ the model, and query failed assumptions.
 |------------------|-----------|-------------------------------------------------------------|
 | CaDiCaL 2.2      | ✅ Phase 0 | default; incremental; via the `rustsat-cadical` crate      |
 | Built-in CDCL    | ✅ Phase 7 | pure Rust (watched literals, VSIDS, first-UIP, LBD, Luby restarts, assumptions); `--solver builtin` |
+| Portfolio        | ✅ Phase 9 | `--threads N`: N diversified members race on hard calls (see below) |
 | Browser solvers  | ✅ Phase 8 | CaDiCaL (and MiniSat) compiled with Emscripten into separate WebAssembly modules; `redsat-wasm` calls them through a JavaScript `Solver` |
 | Kissat           | later     | often fastest one-shot; not incremental                     |
 | External process | later     | any competition solver through a DIMACS file                |
@@ -662,6 +663,28 @@ semiprime: 13 s against 0.04 s). Typical CDCL tuning (initial phase, a Glucose-s
 ramp) did not close the gap, which comes from CaDiCaL's inprocessing, rephasing and
 stabilisation. In the browser, the answer is therefore to offer CaDiCaL itself, compiled to
 WebAssembly, rather than to tune the built-in solver.
+
+**Multithreading: an adaptive portfolio.** CaDiCaL and MiniSat are sequential. Truly parallel
+solvers (gimsatul, Painless, Mallob) share clauses between threads, but none supports the
+incremental interface (clauses that accumulate, assumptions, failed assumptions) that
+enumeration, optimization and explanations rely on. So RedSAT parallelises the way portfolio
+solvers such as ManySAT do: N differently configured members race and the first answer wins.
+The members vary CaDiCaL's preset (`sat`/`unsat`), seed, initial phase and variable shuffling.
+Races are rare by design: the first member solves alone, on the calling thread, and the
+helpers join only when a call is still running after 25 ms. The helpers are persistent threads
+(created on the first race, from a log of the formula) that receive every clause in order. A
+watchdog thread times calls, starts races and keeps stopping the losers until they report,
+because a stop that reaches a search before it begins may be ignored. Measured on 8 cores:
+
+| Program | 1 thread | 4 threads |
+|---|---|---|
+| factoring a 36-bit semiprime | 7.84 s | 0.20 s |
+| all 724 solutions of 10-queens (724 quick calls) | 1.18 s | 1.26 s |
+| 30-item knapsack (binary-search optimization) | 0.26 s | 0.30 s |
+
+On heavy-tailed instances, one of the members is usually lucky; on easy calls the cost is a
+message to the watchdog. With several threads, which of several valid solutions is found can
+vary from run to run (`-j 1` is reproducible).
 
 ## 6. Tooling
 

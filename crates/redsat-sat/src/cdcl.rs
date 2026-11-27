@@ -158,6 +158,10 @@ pub struct Cdcl {
     /// The number of learnt clauses currently kept.
     learnts: usize,
     conflicts: u64,
+    /// Set by an [`Interrupter`](crate::Interrupter) to stop the running search.
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// The phase new variables start with.
+    initial_phase: bool,
 }
 
 impl Default for Cdcl {
@@ -196,6 +200,18 @@ impl Cdcl {
             learnt_limit: 2000,
             learnts: 0,
             conflicts: 0,
+            stop: std::sync::Arc::default(),
+            initial_phase: false,
+        }
+    }
+
+    /// A solver that searches differently from [`Cdcl::new`], for portfolios: variable `seed`
+    /// picks the initial phase (odd seeds start from true).
+    #[must_use]
+    pub fn with_seed(seed: u64) -> Self {
+        Self {
+            initial_phase: seed % 2 == 1,
+            ..Self::new()
         }
     }
 
@@ -554,6 +570,10 @@ impl Cdcl {
             if let Some(conflict) = self.propagate() {
                 self.conflicts += 1;
                 conflicts += 1;
+                if self.stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    self.backtrack(0);
+                    return Some(SolveResult::Unknown);
+                }
                 if self.decision_level() == 0 {
                     self.consistent = false;
                     return Some(SolveResult::Unsat);
@@ -631,7 +651,7 @@ impl ClauseSink for Cdcl {
         self.level.push(0);
         self.reason.push(None);
         self.activity.push(0.0);
-        self.saved_phase.push(false);
+        self.saved_phase.push(self.initial_phase);
         self.seen.push(false);
         self.watches.push(Vec::new());
         self.watches.push(Vec::new());
@@ -695,6 +715,13 @@ impl Solver for Cdcl {
         "built-in CDCL"
     }
 
+    fn interrupter(&mut self) -> Option<crate::Interrupter> {
+        let stop = std::sync::Arc::clone(&self.stop);
+        Some(Box::new(move || {
+            stop.store(true, std::sync::atomic::Ordering::Relaxed)
+        }))
+    }
+
     fn solve_with(&mut self, assumptions: &[Lit]) -> SolveResult {
         self.has_model = false;
         self.failed.clear();
@@ -706,6 +733,7 @@ impl Solver for Cdcl {
             self.consistent = false;
             return SolveResult::Unsat;
         }
+        self.stop.store(false, std::sync::atomic::Ordering::Relaxed);
         let mut restarts = 0;
         let result = loop {
             if let Some(result) = self.search(assumptions, Self::luby(restarts) * RESTART_UNIT) {

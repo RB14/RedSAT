@@ -61,8 +61,10 @@ $ redsat examples/factor.rsat
 - **A standard library written in RedSAT.** `digits`, `sorted` (a sorting network),
   `lex_less`, `exactly`, `at_most`, `is_permutation`, string helpers and more. Your own
   functions and `import "file.rsat"` work the same way.
-- **Two solvers.** CaDiCaL is the default. A pure-Rust CDCL solver (`--solver builtin`) needs
-  no native code.
+- **Two solvers, and multithreading.** CaDiCaL is the default. A pure-Rust CDCL solver
+  (`--solver builtin`) needs no native code. On multi-core machines, differently configured
+  solvers race on hard problems (`--threads`): factoring a 36-bit semiprime takes 0.2 s instead
+  of 7.8 s.
 - **Tooling:**
   - a REPL;
   - `--verbose` progress (decision bits, search space, CNF size, timings);
@@ -90,6 +92,7 @@ redsat -v examples/factor.rsat              # report each phase: unknowns, searc
 redsat --stats examples/coins.rsat          # per-solve domains, bit widths and CNF size
 redsat --interactive examples/n_queens.rsat # step through solutions: Enter / a(ll) / q(uit)
 redsat --solver builtin examples/bits.rsat  # use the pure-Rust solver
+redsat -j 8 bench/factor36.rsat              # let up to 8 solvers race on hard SAT calls (default: up to 4)
 redsat --strict examples/pell.rsat          # turn on every strict check
 redsat check examples/coins.rsat            # parse and type-check only
 redsat repl                                 # build a program one statement at a time

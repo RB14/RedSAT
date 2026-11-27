@@ -1,0 +1,25 @@
+{
+  "name": "redsat-playground",
+  "private": true,
+  "version": "0.1.0",
+  "description": "The RedSAT web playground: the compiler and solver compiled to WebAssembly, running in your browser.",
+  "type": "module",
+  "scripts": {
+    "wasm": "node scripts/build-wasm.mjs",
+    "build": "npm run wasm && node scripts/build.mjs",
+    "bundle": "node scripts/build.mjs",
+    "dev": "npm run wasm && node scripts/build.mjs --serve",
+    "test": "node --test scripts/*.test.mjs"
+  },
+  "devDependencies": {
+    "@codemirror/autocomplete": "^6.18.0",
+    "@codemirror/commands": "^6.8.0",
+    "@codemirror/language": "^6.11.0",
+    "@codemirror/lint": "^6.8.0",
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/view": "^6.36.0",
+    "@lezer/highlight": "^1.2.0",
+    "codemirror": "^6.0.1",
+    "esbuild": "^0.28.0"
+  }
+}

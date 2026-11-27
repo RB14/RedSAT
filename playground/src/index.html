@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RedSAT Playground</title>
+    <meta
+      name="description"
+      content="Write programs with unknowns in an imperative style; RedSAT compiles them to SAT and solves them, right in your browser."
+    />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="./" title="RedSAT playground">
+        <img src="favicon.svg" alt="" width="26" height="26" />
+        <span class="wordmark">Red<b>SAT</b></span>
+        <span class="badge">playground</span>
+      </a>
+
+      <div class="actions">
+        <label class="picker">
+          <span class="visually-hidden">Example</span>
+          <select id="examples" title="Examples"></select>
+        </label>
+        <button id="run" class="primary" title="Run (Ctrl+Enter)">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" /></svg>
+          Run
+        </button>
+        <button id="stop" class="danger" title="Stop (Esc)" hidden>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1.5" /></svg>
+          Stop
+        </button>
+      </div>
+
+      <nav class="links">
+        <button id="share" class="ghost" title="Copy a link to this program">Share</button>
+        <a class="ghost" href="guide/">Guide</a>
+      </nav>
+    </header>
+
+    <main id="workspace" class="workspace">
+      <section class="pane editor-pane" aria-label="Program">
+        <div class="pane-head">
+          <div class="about">
+            <h1 id="example-title">RedSAT</h1>
+            <p id="example-description"></p>
+          </div>
+          <button id="reset" class="ghost small" title="Discard your changes to this example" hidden>Reset</button>
+        </div>
+        <p id="slow-note" class="note" hidden></p>
+        <div id="editor" class="editor"></div>
+      </section>
+
+      <div id="divider" class="divider" role="separator" aria-label="Resize"></div>
+
+      <section class="pane output-pane" aria-label="Output">
+        <div class="pane-head">
+          <h2>Output</h2>
+          <div class="options">
+            <label title="Report each phase: unknowns, search space, circuit and CNF sizes, timings">
+              <input type="checkbox" id="verbose" /> Verbose
+            </label>
+            <label title="Strict mode: unknowns need explicit types and bounds">
+              <input type="checkbox" id="strict" /> Strict
+            </label>
+            <label class="solver" title="The SAT solver">
+              <span>Solver</span>
+              <select id="solver">
+                <option value="builtin">Built-in CDCL (Rust → WebAssembly)</option>
+                <option disabled>CaDiCaL (coming soon)</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div id="output" class="output" aria-live="polite"></div>
+        <footer class="statusbar">
+          <span id="status" class="status-text idle">Loading…</span>
+          <span id="stats" class="stats"></span>
+        </footer>
+      </section>
+    </main>
+
+    <footer class="pagefoot">
+      <span id="version">RedSAT</span>
+      <span>· the compiler and its SAT solver run entirely in your browser</span>
+    </footer>
+    <div id="toast" class="toast" role="status"></div>
+  </body>
+</html>

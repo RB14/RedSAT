@@ -73,3 +73,65 @@ pub const PRELUDE_FUNCTIONS: &[&str] = &[
     "ends_with",
     "count_char",
 ];
+
+/// A short description of a built-in function, for completion and hover.
+#[must_use]
+pub fn builtin_doc(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "abs" => "abs(x): the absolute value",
+        "min" => "min(a, b, …) or min(xs): the smallest value",
+        "max" => "max(a, b, …) or max(xs): the largest value",
+        "len" => "len(xs): the length of an array or string",
+        "sum" => "sum(xs) or sum(e for x in xs if c): the total",
+        "count" => "count(bs) or count(c for x in xs): how many are true",
+        "all" => "all(bs) or all(c for x in xs): every one is true",
+        "any" => "any(bs) or any(c for x in xs): at least one is true",
+        "all_different" => "all_different(xs): no two elements are equal",
+        "reverse" => "reverse(xs): the array or string, reversed",
+        "ord" => "ord(c): the code of a character",
+        "chr" => "chr(n): the character with code n",
+        _ => return None,
+    })
+}
+
+/// A short description of a keyword, for hover.
+#[must_use]
+pub fn keyword_doc(word: &str) -> Option<&'static str> {
+    Some(match word {
+        "var" => {
+            "`var x` declares an unknown (types may be inferred); `var x = e` defines a value."
+        }
+        "require" => "`require condition`: every solution must satisfy the condition.",
+        "solve" => {
+            "`solve [all | unique] targets [limit K] [minimize e | maximize e] { body } else { … }`: \
+             find solutions; the body runs once per solution."
+        }
+        "print" => "`print a, b, …`: prints values (unknowns only inside a `solve` body).",
+        "fn" => "`fn name(p: T, …) -> T { … }`: a function, inlined at every call.",
+        "while" => {
+            "`while cond bound K { … }`: a loop; `bound` is required when `cond` depends on unknowns."
+        }
+        "for" => "`for x in lo..hi`, `for x in array`: a loop, unrolled at compile time.",
+        "enum" => "`enum Name { A, B }`: a type with named values, used as `Name.A`.",
+        "struct" => "`struct Name { field: T }`: a record, built as `Name(field: value)`.",
+        "implies" | "iff" | "xor" | "and" | "or" | "not" => "a logical operator",
+        "all" | "unique" | "limit" | "minimize" | "maximize" => "a `solve` modifier",
+        "bound" => "`while cond bound K`: the maximum number of iterations",
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_builtin_function_is_documented() {
+        for name in BUILTIN_FUNCTIONS {
+            assert!(
+                builtin_doc(name).is_some_and(|doc| doc.starts_with(name)),
+                "{name}"
+            );
+        }
+    }
+}

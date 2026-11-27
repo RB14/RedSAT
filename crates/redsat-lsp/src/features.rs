@@ -8,7 +8,9 @@ use lsp_types::{
     Location, Range, SymbolInformation, SymbolKind as LspSymbolKind, Uri,
 };
 use redsat_lang::check::{Symbol, SymbolKind, TypeInfo};
-use redsat_lang::syntax::{BUILTIN_FUNCTIONS, BUILTIN_TYPES, CONTEXTUAL_KEYWORDS, KEYWORDS};
+use redsat_lang::syntax::{
+    BUILTIN_FUNCTIONS, BUILTIN_TYPES, CONTEXTUAL_KEYWORDS, KEYWORDS, builtin_doc, keyword_doc,
+};
 use redsat_lang::{Severity, Span};
 
 use crate::document::Document;
@@ -162,50 +164,6 @@ fn resolve<'a>(types: &'a TypeInfo, name: &str, span: Span) -> Option<&'a Symbol
     })
 }
 
-/// A short description of a built-in function, for completion and hover.
-fn builtin_doc(name: &str) -> &'static str {
-    match name {
-        "abs" => "abs(x): the absolute value",
-        "min" => "min(a, b, …) or min(xs): the smallest value",
-        "max" => "max(a, b, …) or max(xs): the largest value",
-        "len" => "len(xs): the length of an array or string",
-        "sum" => "sum(xs) or sum(e for x in xs if c): the total",
-        "count" => "count(bs) or count(c for x in xs): how many are true",
-        "all" => "all(bs) or all(c for x in xs): every one is true",
-        "any" => "any(bs) or any(c for x in xs): at least one is true",
-        "all_different" => "all_different(xs): no two elements are equal",
-        "reverse" => "reverse(xs): the array or string, reversed",
-        "ord" => "ord(c): the code of a character",
-        "chr" => "chr(n): the character with code n",
-        _ => "",
-    }
-}
-
-fn keyword_doc(word: &str) -> Option<&'static str> {
-    Some(match word {
-        "var" => {
-            "`var x` declares an unknown (types may be inferred); `var x = e` defines a value."
-        }
-        "require" => "`require condition`: every solution must satisfy the condition.",
-        "solve" => {
-            "`solve [all | unique] targets [limit K] [minimize e | maximize e] { body } else { … }`: \
-             find solutions; the body runs once per solution."
-        }
-        "print" => "`print a, b, …`: prints values (unknowns only inside a `solve` body).",
-        "fn" => "`fn name(p: T, …) -> T { … }`: a function, inlined at every call.",
-        "while" => {
-            "`while cond bound K { … }`: a loop; `bound` is required when `cond` depends on unknowns."
-        }
-        "for" => "`for x in lo..hi`, `for x in array`: a loop, unrolled at compile time.",
-        "enum" => "`enum Name { A, B }`: a type with named values, used as `Name.A`.",
-        "struct" => "`struct Name { field: T }`: a record, built as `Name(field: value)`.",
-        "implies" | "iff" | "xor" | "and" | "or" | "not" => "a logical operator",
-        "all" | "unique" | "limit" | "minimize" | "maximize" => "a `solve` modifier",
-        "bound" => "`while cond bound K`: the maximum number of iterations",
-        _ => return None,
-    })
-}
-
 /// Completion items at `offset`.
 #[must_use]
 pub fn completions(document: &Document, offset: usize) -> Vec<CompletionItem> {
@@ -284,7 +242,7 @@ pub fn completions(document: &Document, offset: usize) -> Vec<CompletionItem> {
             function,
             CompletionItemKind::FUNCTION,
             Some("built-in".into()),
-            Some(builtin_doc(function)),
+            Some(builtin_doc(function).unwrap_or_default()),
         );
         entry.insert_text = Some(format!("{function}($1)"));
         entry.insert_text_format = Some(InsertTextFormat::SNIPPET);
@@ -433,7 +391,10 @@ pub fn hover(document: &Document, offset: usize) -> Option<(Range, String)> {
     if BUILTIN_FUNCTIONS.contains(&word) {
         return Some((
             range,
-            format!("```rsat\n{word}\n```\n{}", builtin_doc(word)),
+            format!(
+                "```rsat\n{word}\n```\n{}",
+                builtin_doc(word).unwrap_or_default()
+            ),
         ));
     }
     if KEYWORDS.contains(&word) || CONTEXTUAL_KEYWORDS.contains(&word) {

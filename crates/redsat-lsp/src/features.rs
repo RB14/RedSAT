@@ -11,7 +11,7 @@ use lsp_types::{
 };
 use redsat_lang::check::{Symbol, SymbolKind, TypeInfo};
 use redsat_lang::signatures::{FunctionInfo, Origin, builtin_functions, call_at};
-use redsat_lang::syntax::{BUILTIN_TYPES, CONTEXTUAL_KEYWORDS, KEYWORDS, keyword_doc};
+use redsat_lang::syntax::{BUILTIN_TYPES, CONTEXTUAL_KEYWORDS, KEYWORDS, keyword_doc, type_doc};
 use redsat_lang::{Severity, Span};
 
 use crate::document::Document;
@@ -356,9 +356,12 @@ fn item(
         label: label.to_string(),
         kind: Some(kind),
         detail,
-        documentation: doc
-            .filter(|d| !d.is_empty())
-            .map(|d| Documentation::String(d.to_string())),
+        documentation: doc.filter(|d| !d.is_empty()).map(|d| {
+            Documentation::MarkupContent(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: d.to_string(),
+            })
+        }),
         ..CompletionItem::default()
     }
 }
@@ -378,7 +381,7 @@ fn type_items(types: &TypeInfo) -> Vec<CompletionItem> {
                 t,
                 CompletionItemKind::TYPE_PARAMETER,
                 Some("built-in type".into()),
-                None,
+                type_doc(t),
             )
         })
         .collect();
@@ -483,7 +486,7 @@ pub fn hover(document: &Document, offset: usize) -> Option<(Range, String)> {
     if KEYWORDS.contains(&word) || CONTEXTUAL_KEYWORDS.contains(&word) {
         return keyword_doc(word).map(|doc| (range, doc.to_string()));
     }
-    None
+    type_doc(word).map(|doc| (range, doc.to_string()))
 }
 
 fn describe(document: &Document, types: &TypeInfo, symbol: &Symbol) -> String {
@@ -777,7 +780,10 @@ mod tests {
         assert!(text.contains("var x: int"), "{text}");
         assert!(text.contains("inferred domain `[2, 500]`"), "{text}");
         let (_, text) = hover(&doc, position_of(&doc, "solve")).unwrap();
-        assert!(text.contains("find solutions"));
+        assert!(text.contains("**targets**"), "{text}");
+        let doc = document("var d: int[0..=9]\nsolve d\n");
+        let (_, text) = hover(&doc, position_of(&doc, "int")).unwrap();
+        assert!(text.contains("Arithmetic is exact"), "{text}");
     }
 
     #[test]

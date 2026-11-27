@@ -8,54 +8,84 @@
 // --- numbers -----------------------------------------------------------------------------------
 
 /// -1, 0 or 1: the sign of `x`.
+///
+/// Example: `sign(-5)` is `-1`, `sign(0)` is `0`.
 fn sign(x: int) -> int {
     if x > 0 { return 1 }
     if x < 0 { return -1 }
     return 0
 }
 
-/// `x`, limited to the range `lo..=hi`.
+/// `x`, limited to the range `lo..=hi`: `lo` when `x` is below it, `hi` when above.
+///
+/// Works on unknowns: the result is an unknown that follows `x`.
+///
+/// Example: `clamp(15, 0, 10)` is `10`, `clamp(4, 0, 10)` is `4`.
 fn clamp(x: int, lo: int, hi: int) -> int {
     return min(max(x, lo), hi)
 }
 
-/// Whether `d` divides `n` (`d` must not be 0).
+/// Whether `d` divides `n` exactly (`n % d == 0`). `d` must not be 0.
+///
+/// Example: `divides(3, 12)` is `true`; `require divides(7, x)` makes `x` a multiple of 7.
 fn divides(d: int, n: int) -> bool {
     return n % d == 0
 }
 
-/// Whether `x` is even.
+/// Whether `x` is even (also for negative `x`).
+///
+/// Example: `is_even(-4)` is `true`.
 fn is_even(x: int) -> bool {
     return x % 2 == 0
 }
 
-/// Whether `x` is odd.
+/// Whether `x` is odd (also for negative `x`).
+///
+/// Example: `is_odd(-3)` is `true`.
 fn is_odd(x: int) -> bool {
     return x % 2 == 1
 }
 
-/// The greatest common divisor of two known numbers.
+/// The greatest common divisor of `a` and `b` (Euclid's algorithm).
+///
+/// Both arguments must be known: the function is recursive, and recursion must stop on known
+/// values.
+///
+/// Example: `gcd(84, 36)` is `12`.
 fn gcd(a: int, b: int) -> int {
     if b == 0 { return abs(a) }
     return gcd(b, a % b)
 }
 
-/// The `k` decimal digits of `n`, most significant first (`n` has at most `k` digits).
+/// The `k` decimal digits of `n`, most significant first, with leading zeros.
+///
+/// `n` must be non-negative with at most `k` digits, and `k` must be known. With an unknown `n`,
+/// the digits are unknowns too, which is handy for digit puzzles: `require digits(n, 3) == [a, b,
+/// c]`.
+///
+/// Example: `digits(42, 4)` is `[0, 0, 4, 2]`.
 fn digits(n: int, k: int) -> [int] {
     return [n / 10 ^ (k - 1 - i) % 10 for i in 0..k]
 }
 
-/// The sum of the `k` decimal digits of `n`.
+/// The sum of the `k` decimal digits of `n` (`k` must be known).
+///
+/// Example: `digit_sum(4096, 4)` is `19`.
 fn digit_sum(n: int, k: int) -> int {
     return sum(digits(n, k))
 }
 
-/// Bit `i` of `x`: 0 or 1.
+/// Bit `i` of `x` in two's complement: 0 or 1. `i` must be known.
+///
+/// Example: `bit(6, 1)` is `1`; `bit(-1, 100)` is `1`.
 fn bit(x: int, i: int) -> int {
     return (x >> i) & 1
 }
 
-/// The number of one bits among the lowest `width` bits of `x`.
+/// The number of one bits among the lowest `width` bits of `x` (two's complement). `width` must be
+/// known.
+///
+/// Example: `popcount(255, 8)` is `8`, `popcount(-1, 4)` is `4`.
 fn popcount(x: int, width: int) -> int {
     return sum(bit(x, i) for i in 0..width)
 }
@@ -63,28 +93,44 @@ fn popcount(x: int, width: int) -> int {
 // --- counting ----------------------------------------------------------------------------------
 
 /// Whether exactly `k` of the conditions hold.
+///
+/// With a known `k`, it gets a counting encoding that the solver propagates directly, which is much
+/// faster than adding up the conditions by hand. Build the conditions with an array comprehension.
+///
+/// Example: `require exactly(1, [queen[r][c] for c in 0..8])`
 fn exactly(k: int, conditions: [bool]) -> bool {
     return count(conditions) == k
 }
 
-/// Whether at least `k` of the conditions hold.
+/// Whether at least `k` of the conditions hold (a fast counting encoding when `k` is known).
+///
+/// Example: `require at_least(2, [a > 0, b > 0, c > 0])`
 fn at_least(k: int, conditions: [bool]) -> bool {
     return count(conditions) >= k
 }
 
-/// Whether at most `k` of the conditions hold.
+/// Whether at most `k` of the conditions hold (a fast counting encoding when `k` is known).
+///
+/// Example: `require at_most(1, [x == 7 for x in xs])`
 fn at_most(k: int, conditions: [bool]) -> bool {
     return count(conditions) <= k
 }
 
 /// How many elements of `xs` equal `value`.
+///
+/// Example: `count_of([1, 2, 1], 1)` is `2`; `require count_of(row, 0) == 2`.
 fn count_of(xs: [int], value: int) -> int {
     return count(x == value for x in xs)
 }
 
 // --- arrays ------------------------------------------------------------------------------------
 
-/// The product of the elements.
+/// The product of the elements (`1` for an empty array).
+///
+/// Multiplying unknowns builds multiplier circuits, the costliest arithmetic for the solver: prefer
+/// known factors where you can.
+///
+/// Example: `product([2, 3, 4])` is `24`.
 fn product(xs: [int]) -> int {
     var result = 1
     for x in xs {
@@ -93,37 +139,58 @@ fn product(xs: [int]) -> int {
     return result
 }
 
-/// Whether all elements are equal.
+/// Whether all elements are equal (`true` for zero or one element).
+///
+/// Example: `all_equal([3, 3, 3])` is `true`.
 fn all_equal(xs: [int]) -> bool {
     return all(xs[i] == xs[0] for i in 1..len(xs))
 }
 
-/// Whether each element is at most the next one.
+/// Whether each element is at most the next one (non-decreasing order).
+///
+/// Example: `increasing([1, 2, 2, 5])` is `true`.
 fn increasing(xs: [int]) -> bool {
     return all(xs[i - 1] <= xs[i] for i in 1..len(xs))
 }
 
 /// Whether each element is smaller than the next one.
+///
+/// A common way to break symmetry: requiring interchangeable unknowns to be strictly increasing
+/// keeps one ordering of each solution.
+///
+/// Example: `strictly_increasing([1, 2, 2])` is `false`.
 fn strictly_increasing(xs: [int]) -> bool {
     return all(xs[i - 1] < xs[i] for i in 1..len(xs))
 }
 
-/// Whether each element is at least the next one.
+/// Whether each element is at least the next one (non-increasing order).
+///
+/// Example: `decreasing([5, 2, 2, 1])` is `true`.
 fn decreasing(xs: [int]) -> bool {
     return all(xs[i - 1] >= xs[i] for i in 1..len(xs))
 }
 
 /// Whether each element is larger than the next one.
+///
+/// Example: `strictly_decreasing([5, 2, 1])` is `true`.
 fn strictly_decreasing(xs: [int]) -> bool {
     return all(xs[i - 1] > xs[i] for i in 1..len(xs))
 }
 
 /// Whether no two elements are equal, except for copies of `ignored` (e.g. 0 for "empty").
+///
+/// Like `all_different`, for puzzles where some cells stay empty.
+///
+/// Example: `all_different_except([0, 3, 0, 5], 0)` is `true`.
 fn all_different_except(xs: [int], ignored: int) -> bool {
     return all(xs[i] != xs[j] or xs[i] == ignored for i in 0..len(xs) for j in i + 1..len(xs))
 }
 
-/// The first position of `value` in `xs`, or -1.
+/// The first position of `value` in `xs`, or -1 when it does not occur.
+///
+/// Works on unknowns: the position is an unknown that the solver keeps consistent with `xs`.
+///
+/// Example: `index_of([4, 7, 7], 7)` is `1`.
 fn index_of(xs: [int], value: int) -> int {
     var found = -1
     for i in 0..len(xs) {
@@ -133,7 +200,13 @@ fn index_of(xs: [int], value: int) -> int {
     return found
 }
 
-/// Whether `xs` comes before `ys` in lexicographic order (useful to break symmetries).
+/// Whether `xs` comes before `ys` in lexicographic order (as words in a dictionary; a proper prefix
+/// comes first).
+///
+/// Useful to break symmetries: when two rows of unknowns are interchangeable, `require
+/// lex_less(row[0], row[1])` keeps one of each mirrored pair of solutions.
+///
+/// Example: `lex_less([1, 2], [1, 3])` is `true`.
 fn lex_less(xs: [int], ys: [int]) -> bool {
     var less = false
     var equal = true
@@ -145,6 +218,8 @@ fn lex_less(xs: [int], ys: [int]) -> bool {
 }
 
 /// Whether `xs` comes before or equals `ys` in lexicographic order.
+///
+/// Example: `lex_less_eq([1, 2], [1, 2])` is `true`.
 fn lex_less_eq(xs: [int], ys: [int]) -> bool {
     var less = false
     var equal = true
@@ -155,8 +230,12 @@ fn lex_less_eq(xs: [int], ys: [int]) -> bool {
     return less or (equal and len(xs) <= len(ys))
 }
 
-/// The elements in increasing order: an odd–even transposition sorting network, which works on
-/// unknown elements too.
+/// The elements in increasing order.
+///
+/// Built as a sorting network (odd–even transposition: about n²/2 compare-and-swap steps), so it
+/// works on unknown elements too.
+///
+/// Example: `sorted([3, 1, 2])` is `[1, 2, 3]`.
 fn sorted(xs: [int]) -> [int] {
     var a = xs
     var n = len(a)
@@ -173,7 +252,11 @@ fn sorted(xs: [int]) -> [int] {
     return a
 }
 
-/// Whether `ys` is a rearrangement of `xs`.
+/// Whether `ys` is a rearrangement of `xs` (the same elements, each as often).
+///
+/// Compares the sorted arrays, so it works on unknowns.
+///
+/// Example: `is_permutation([1, 2, 3], [3, 1, 2])` is `true`.
 fn is_permutation(xs: [int], ys: [int]) -> bool {
     return len(xs) == len(ys) and sorted(xs) == sorted(ys)
 }
@@ -181,51 +264,73 @@ fn is_permutation(xs: [int], ys: [int]) -> bool {
 // --- characters and strings ----------------------------------------------------------------------
 
 /// Whether `c` is one of '0'…'9'.
+///
+/// Example: `is_digit('7')` is `true`.
 fn is_digit(c: char) -> bool {
     return c in '0'..='9'
 }
 
-/// Whether `c` is one of 'a'…'z'.
+/// Whether `c` is one of 'a'…'z' (ASCII).
+///
+/// Example: `is_lower('q')` is `true`.
 fn is_lower(c: char) -> bool {
     return c in 'a'..='z'
 }
 
-/// Whether `c` is one of 'A'…'Z'.
+/// Whether `c` is one of 'A'…'Z' (ASCII).
+///
+/// Example: `is_upper('q')` is `false`.
 fn is_upper(c: char) -> bool {
     return c in 'A'..='Z'
 }
 
-/// Whether `c` is an ASCII letter.
+/// Whether `c` is an ASCII letter, lower or upper case.
+///
+/// Example: `require all(is_letter(c) for c in word)`
 fn is_letter(c: char) -> bool {
     return is_lower(c) or is_upper(c)
 }
 
-/// `c` in upper case (ASCII letters only).
+/// `c` in upper case. Only ASCII letters change; other characters are returned as they are.
+///
+/// Example: `to_upper('q')` is `'Q'`.
 fn to_upper(c: char) -> char {
     return if is_lower(c) { chr(ord(c) - 32) } else { c }
 }
 
-/// `c` in lower case (ASCII letters only).
+/// `c` in lower case. Only ASCII letters change; other characters are returned as they are.
+///
+/// Example: `to_lower('Q')` is `'q'`.
 fn to_lower(c: char) -> char {
     return if is_upper(c) { chr(ord(c) + 32) } else { c }
 }
 
-/// The value of a digit character: '7' → 7.
+/// The value of a digit character (`c` should be one of '0'…'9').
+///
+/// Example: `digit_value('7')` is `7`.
 fn digit_value(c: char) -> int {
     return ord(c) - ord('0')
 }
 
-/// Whether `s` starts with `prefix` (whose length must be known).
+/// Whether `s` starts with `prefix`. The length of `prefix` must be known; `s` may be an unknown
+/// string.
+///
+/// Example: `starts_with("redsat", "red")` is `true`.
 fn starts_with(s: string, prefix: string) -> bool {
     return len(prefix) <= len(s) and all(s[i] == prefix[i] for i in 0..len(prefix))
 }
 
-/// Whether `s` ends with `suffix` (whose length must be known).
+/// Whether `s` ends with `suffix`. The length of `suffix` must be known; `s` may be an unknown
+/// string.
+///
+/// Example: `ends_with("redsat", "sat")` is `true`.
 fn ends_with(s: string, suffix: string) -> bool {
     return len(suffix) <= len(s) and all(s[len(s) - len(suffix) + i] == suffix[i] for i in 0..len(suffix))
 }
 
-/// How many times `c` occurs in `s`.
+/// How many times the character `c` occurs in `s`.
+///
+/// Example: `count_char("banana", 'a')` is `3`.
 fn count_char(s: string, c: char) -> int {
     return count(x == c for x in s)
 }

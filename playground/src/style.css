@@ -654,6 +654,48 @@ kbd {
   max-width: 460px;
   padding: 8px 11px;
   font-size: 13px;
+  line-height: 1.45;
+}
+
+.hover {
+  max-height: min(26em, 60vh);
+  overflow-y: auto;
+}
+
+/* Docs, rendered from the compiler's light Markdown (see renderDoc in intelligence.js). */
+.doc p,
+.doc ul {
+  margin: 0 0 6px;
+}
+
+.doc > :last-child {
+  margin-bottom: 0;
+}
+
+.doc ul {
+  padding-left: 18px;
+}
+
+.doc li + li {
+  margin-top: 3px;
+}
+
+.doc code,
+.doc-syntax {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.doc code {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--active-line);
+}
+
+.doc-syntax {
+  margin-bottom: 6px;
+  font-weight: 600;
+  white-space: pre-wrap;
 }
 
 .hover-head,

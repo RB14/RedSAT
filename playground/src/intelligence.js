@@ -5,11 +5,70 @@
 // structs, enums, inferred domains), with the program text as a fallback while it does not
 // parse.
 
-import { snippetCompletion } from '@codemirror/autocomplete';
-import { StateField } from '@codemirror/state';
-import { EditorView, hoverTooltip, showTooltip } from '@codemirror/view';
+import { completionStatus, snippetCompletion } from '@codemirror/autocomplete';
+import { StateEffect, StateField } from '@codemirror/state';
+import { EditorView, hoverTooltip, keymap, showTooltip } from '@codemirror/view';
 
 const IDENT = /[A-Za-z_][A-Za-z0-9_]*/;
+
+// --- docs -----------------------------------------------------------------------------------
+
+/** Appends `text` to `parent`, turning `code` and **bold** spans into elements. */
+function appendInline(parent, text) {
+  for (const part of text.split(/(`[^`]+`|\*\*[^*]+\*\*)/)) {
+    if (!part) continue;
+    if (part.startsWith('`') && part.endsWith('`') && part.length > 1) {
+      parent.append(Object.assign(document.createElement('code'), { textContent: part.slice(1, -1) }));
+    } else if (part.startsWith('**') && part.endsWith('**') && part.length > 3) {
+      parent.append(Object.assign(document.createElement('strong'), { textContent: part.slice(2, -2) }));
+    } else {
+      parent.append(part);
+    }
+  }
+}
+
+/** Renders a doc written in the compiler's light Markdown: paragraphs, `- ` lists, inline
+ * `code` and **bold**. A first paragraph that is only code (a keyword's syntax) is shown as a
+ * signature. */
+export function renderDoc(text) {
+  const root = document.createElement('div');
+  root.className = 'doc';
+  text
+    .trim()
+    .split(/\n\s*\n/)
+    .forEach((block, index) => {
+      if (index === 0 && /^`[^`]+`$/.test(block.trim())) {
+        root.append(Object.assign(document.createElement('div'), { className: 'doc-syntax', textContent: block.trim().slice(1, -1) }));
+        return;
+      }
+      let list = null;
+      let current = null;
+      for (const line of block.split('\n')) {
+        if (line.startsWith('- ')) {
+          list ??= root.appendChild(document.createElement('ul'));
+          current = list.appendChild(document.createElement('li'));
+          appendInline(current, line.slice(2));
+        } else if (current) {
+          current.append(' ');
+          appendInline(current, line);
+        } else {
+          current = root.appendChild(document.createElement('p'));
+          appendInline(current, line);
+        }
+      }
+    });
+  return root;
+}
+
+/** A doc panel: an optional code heading, the doc, and what kind of thing it describes. */
+function docPanel({ head, doc, kind }) {
+  const dom = document.createElement('div');
+  dom.className = 'hover';
+  if (head) dom.append(element('hover-head', head));
+  if (doc) dom.append(renderDoc(doc));
+  if (kind) dom.append(element('hover-kind', kind));
+  return dom;
+}
 
 /** Splits a parameter list at top-level commas. */
 function splitParams(text) {
@@ -51,7 +110,7 @@ export function librarySignatures(vocabulary) {
       name,
       label: line.trim().replace(/^fn\s+/, ''),
       params: match ? splitParams(match[1]) : [],
-      doc: rest.join(' '),
+      doc: rest.join('\n'),
       kind: 'standard library',
     });
   }
@@ -194,22 +253,45 @@ function memberOptions(analysis, text, before, pos) {
   return { from, options: [] };
 }
 
+/** The keywords the grammar expects after `prefix` (the line up to the word being completed),
+ * ranked first: `solve ` → `all`/`unique`; after the targets → `limit`/`minimize`/`maximize`;
+ * a `while` condition → `bound`; `for i ` → `in`. */
+function expectedKeywords(prefix) {
+  const clause = (keyword) => new RegExp(`\\b${keyword}\\b[^{]*[\\w\\])'"]\\s+$`).test(prefix);
+  if (/\bsolve\s+$/.test(prefix)) return new Set(['all', 'unique']);
+  if (/\b(?:all|unique|limit|minimize|maximize|bound|in)\s+$/.test(prefix)) return new Set();
+  if (clause('solve')) {
+    const used = new Set(prefix.slice(prefix.lastIndexOf('solve')).match(/\b(?:limit|minimize|maximize)\b/g) ?? []);
+    if (used.has('minimize') || used.has('maximize')) return new Set();
+    return new Set(used.has('limit') ? ['minimize', 'maximize'] : ['limit', 'minimize', 'maximize']);
+  }
+  if (clause('while') && !/\bwhile\b.*\bbound\b/.test(prefix)) return new Set(['bound']);
+  if (/\bfor\s+[A-Za-z_]\w*\s+$/.test(prefix)) return new Set(['in']);
+  return new Set();
+}
+
 /** The completion source. `latest()` returns the latest analysis with symbols. */
 export function completionSource(words, latest) {
   const library = librarySignatures(words.vocabulary);
+  // The docs of a keyword or type, shown next to the selected completion. Keyword docs, not
+  // function docs: `all` is both.
+  const wordInfo = (word, kind) => {
+    const doc = [...words.vocabulary.keywords, ...words.vocabulary.contextual, ...words.vocabulary.types].find((w) => w.name === word)?.doc;
+    return doc ? () => docPanel({ doc, kind }) : undefined;
+  };
   const keywordOptions = [...words.keywords, ...words.contextual]
     .filter((label) => !SNIPPET_KEYWORDS.has(label))
-    .map((label) => ({ label, type: 'keyword', info: words.docs.get(label)?.doc, boost: -1 }));
-  const typeOptions = [...words.types].map((label) => ({ label, type: 'type' }));
+    .map((label) => ({ label, type: 'keyword', info: wordInfo(label, 'keyword'), boost: -1 }));
+  const typeOptions = [...words.types].map((label) => ({ label, type: 'type', info: wordInfo(label, 'type') }));
   const snippetOptions = SNIPPETS.map(([label, template, detail]) =>
-    snippetCompletion(template, { label, type: 'keyword', detail, info: words.docs.get(label.split(' ')[0])?.doc }),
+    snippetCompletion(template, { label, type: 'keyword', detail, info: wordInfo(label.split(' ')[0], 'keyword') }),
   );
   const libraryOptions = [...library.values()].map((signature) =>
     snippetCompletion(callSnippet(signature), {
       label: signature.name,
       type: 'function',
       detail: signature.kind === 'built-in' ? 'built-in' : 'std',
-      info: `${signature.label}\n${signature.doc}`,
+      info: () => docPanel({ head: signature.label, doc: signature.doc, kind: signature.kind }),
       boost: -2,
     }),
   );
@@ -224,9 +306,12 @@ export function completionSource(words, latest) {
     const members = memberOptions(analysis, text, before, context.pos);
     if (members) return { ...members, validFor: /^\w*$/ };
 
-    const word = context.matchBefore(/[A-Za-z_][A-Za-z0-9_]*/);
+    // Ctrl+Space also completes where no name has been started yet (e.g. after `solve `).
+    const word =
+      context.matchBefore(/[A-Za-z_][A-Za-z0-9_]*/) ?? (context.explicit ? { from: context.pos, to: context.pos, text: '' } : null);
     if (!word || (word.from === word.to && !context.explicit)) return null;
-    if (/\d$/.test(before.slice(0, before.length - word.text.length))) return null; // e.g. `0..9`
+    const prefix = before.slice(0, before.length - word.text.length);
+    if (/\d$/.test(prefix)) return null; // e.g. `0..9`
 
     const own = programSignatures(text, analysis);
     const functionOptions = [...own.values()]
@@ -236,7 +321,7 @@ export function completionSource(words, latest) {
           label: signature.name,
           type: 'function',
           detail: signature.label.slice(signature.name.length),
-          info: signature.doc ? `${signature.label}\n${signature.doc}` : undefined,
+          info: signature.doc ? () => docPanel({ head: signature.label, doc: signature.doc, kind: signature.kind }) : undefined,
         }),
       );
     const seen = new Set([...own.keys(), word.text]);
@@ -255,6 +340,7 @@ export function completionSource(words, latest) {
       .map((label) => ({ label, type: 'text', boost: -3 }));
 
     const atStatementStart = /^\s*[A-Za-z_]*$/.test(before);
+    const expected = expectedKeywords(prefix);
     return {
       from: word.from,
       options: [
@@ -262,7 +348,7 @@ export function completionSource(words, latest) {
         ...functionOptions,
         ...libraryOptions,
         ...(atStatementStart ? snippetOptions : snippetOptions.filter((o) => o.label === 'if')),
-        ...keywordOptions,
+        ...keywordOptions.map((option) => (expected.has(option.label) ? { ...option, boost: 10 } : option)),
         ...typeOptions,
         ...textOptions,
       ],
@@ -330,7 +416,9 @@ function signatureTooltip(state, library, analysis) {
         head.append(signature.label.slice(close));
       }
       dom.append(head);
-      if (signature.doc) dom.append(Object.assign(document.createElement('div'), { className: 'signature-doc', textContent: signature.doc }));
+      // The summary only: the full doc (details, examples) is one Ctrl+Q away.
+      const summary = signature.doc.split(/\n\s*\n/)[0];
+      if (summary) dom.append(Object.assign(renderDoc(summary), { className: 'doc signature-doc' }));
       return { dom };
     },
   };
@@ -373,49 +461,77 @@ function element(className, text) {
   return Object.assign(document.createElement('div'), { className, textContent: text });
 }
 
+/** What the name at `pos` is, as a tooltip: an unknown's inferred domain, a name's type, or
+ * the docs of a function, keyword or type. */
+function describeAt(state, pos, words, library, analysis) {
+  const word = wordAt(state, pos);
+  if (!word) return null;
+  const domain = analysis?.domains?.find((d) => d.name === word.text || d.name.split(/[.[]/)[0] === word.text);
+  const own = programSignatures(state.doc.toString(), analysis).get(word.text);
+  const symbol = visibleSymbol(analysis, word.text, pos);
+  const signature = library.get(word.text);
+  const entry = words.docs.get(word.text);
+  let panel;
+  if (domain) {
+    const unknowns = domain.unknowns > 1 ? `${domain.unknowns} unknowns, ` : '';
+    const bits = `${domain.width} bit${domain.width === 1 ? '' : 's'}`;
+    panel = { head: `${domain.name}: ${domain.domain}`, doc: `inferred domain · ${unknowns}${bits} each` };
+  } else if (own) {
+    panel = { head: `fn ${own.label}`, doc: own.doc, kind: 'your function · Ctrl+click to go to it' };
+  } else if (symbol) {
+    panel = { head: `${symbol.name}: ${symbol.detail}`, kind: symbol.kind };
+  } else if (signature) {
+    panel = { head: signature.label, doc: signature.doc, kind: signature.kind };
+  } else if (entry && (entry.kind === 'keyword' || entry.kind === 'type')) {
+    panel = { doc: entry.doc, kind: entry.kind };
+  } else {
+    return null;
+  }
+  return { pos: word.from, end: word.to, above: true, create: () => ({ dom: docPanel(panel) }) };
+}
+
 /** Hover: inferred domains of unknowns, types of names, docs of keywords and functions. */
 export function hover(words, latest) {
   const library = librarySignatures(words.vocabulary);
-  return hoverTooltip((view, pos) => {
-    const word = wordAt(view.state, pos);
-    if (!word) return null;
-    const analysis = latest();
-    const domain = analysis?.domains?.find((d) => d.name === word.text || d.name.split(/[.[]/)[0] === word.text);
-    const own = programSignatures(view.state.doc.toString(), analysis).get(word.text);
-    const symbol = visibleSymbol(analysis, word.text, pos);
-    const signature = library.get(word.text);
-    const keyword = words.docs.get(word.text);
-    const parts = [];
-    if (domain) {
-      parts.push(element('hover-head', `${domain.name}: ${domain.domain}`));
-      const unknowns = domain.unknowns > 1 ? `${domain.unknowns} unknowns, ` : '';
-      parts.push(element('', `inferred domain · ${unknowns}${domain.width} bit${domain.width === 1 ? '' : 's'} each`));
-    } else if (own) {
-      parts.push(element('hover-head', `fn ${own.label}`));
-      if (own.doc) parts.push(element('', own.doc));
-      parts.push(element('hover-kind', 'your function · Ctrl+click to go to it'));
-    } else if (symbol) {
-      parts.push(element('hover-head', `${symbol.name}: ${symbol.detail}`), element('hover-kind', symbol.kind));
-    } else if (signature) {
-      parts.push(element('hover-head', signature.label));
-      if (signature.doc) parts.push(element('', signature.doc));
-      parts.push(element('hover-kind', signature.kind));
-    } else if (keyword) {
-      parts.push(element('', keyword.doc), element('hover-kind', 'keyword'));
-    }
-    if (!parts.length) return null;
-    return {
-      pos: word.from,
-      end: word.to,
-      above: true,
-      create() {
-        const dom = document.createElement('div');
-        dom.className = 'hover';
-        dom.append(...parts);
-        return { dom };
-      },
-    };
+  return hoverTooltip((view, pos) => describeAt(view.state, pos, words, library, latest()));
+}
+
+const setQuickDoc = StateEffect.define();
+
+/** Quick documentation from the keyboard: Ctrl+Q (as in IntelliJ) or Ctrl+K Ctrl+I (as in VS
+ * Code) shows what the hover would for the name at the cursor; Escape, typing or moving
+ * closes it. In the completion list, the selected option's docs already show beside it. */
+export function quickDoc(words, latest) {
+  const library = librarySignatures(words.vocabulary);
+  const field = StateField.define({
+    create: () => null,
+    update(value, transaction) {
+      for (const effect of transaction.effects) if (effect.is(setQuickDoc)) return effect.value;
+      return transaction.docChanged || transaction.selection ? null : value;
+    },
+    provide: (f) => showTooltip.from(f),
   });
+  const toggle = (view) => {
+    if (completionStatus(view.state) === 'active') return true;
+    const open = view.state.field(field);
+    const head = view.state.selection.main.head;
+    const tooltip = open ? null : describeAt(view.state, head, words, library, latest());
+    view.dispatch({ effects: setQuickDoc.of(tooltip) });
+    return true; // also when there is nothing to show: Ctrl+Q must not reach the browser
+  };
+  const close = (view) => {
+    if (!view.state.field(field)) return false;
+    view.dispatch({ effects: setQuickDoc.of(null) });
+    return true;
+  };
+  return [
+    field,
+    keymap.of([
+      { key: 'Ctrl-q', run: toggle, preventDefault: true },
+      { key: 'Ctrl-k Ctrl-i', run: toggle, preventDefault: true },
+      { key: 'Escape', run: close },
+    ]),
+  ];
 }
 
 /** Ctrl/Cmd+click goes to a name's declaration. */

@@ -219,7 +219,33 @@ pub fn doc_comment(text: &str, offset: usize) -> String {
         .take_while(|line| line.starts_with("///"))
         .map(|line| line.trim_start_matches('/').trim())
         .collect();
-    lines.into_iter().rev().collect::<Vec<_>>().join(" ")
+    join_doc_lines(lines.into_iter().rev())
+}
+
+/// Joins the lines of a `///` comment into light Markdown: the lines of a paragraph join with
+/// spaces, an empty line separates paragraphs, and a line starting with `- ` (a list item)
+/// starts a new line.
+#[must_use]
+pub fn join_doc_lines<'a>(lines: impl IntoIterator<Item = &'a str>) -> String {
+    let mut text = String::new();
+    let mut paragraph_break = false;
+    for line in lines {
+        let line = line.trim();
+        if line.is_empty() {
+            paragraph_break = !text.is_empty();
+            continue;
+        }
+        if paragraph_break {
+            text.push_str("\n\n");
+        } else if line.starts_with("- ") && !text.is_empty() {
+            text.push('\n');
+        } else if !text.is_empty() {
+            text.push(' ');
+        }
+        paragraph_break = false;
+        text.push_str(line);
+    }
+    text
 }
 
 /// The call that `offset` is inside of: the function's name, which argument (from 0) the

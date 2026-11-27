@@ -15,7 +15,7 @@ use redsat_lang::check::SymbolKind;
 use redsat_lang::config::parse_config;
 use redsat_lang::syntax::{
     BUILTIN_FUNCTIONS, BUILTIN_TYPES, CONTEXTUAL_KEYWORDS, KEYWORDS, PRELUDE_FUNCTIONS,
-    builtin_doc, keyword_doc,
+    builtin_doc, keyword_doc, type_doc,
 };
 use redsat_lang::{
     CompilerOptions, Diagnostic, Hooks, OptionLayer, Severity, SolveStats, SourceFile, SourceMap,
@@ -61,7 +61,8 @@ pub fn version() -> String {
 
 /// The language's vocabulary as JSON, so editors highlight and complete exactly what the
 /// compiler knows: `{keywords, contextual, types, builtins, prelude}`, where keywords carry
-/// `{name, doc}` and functions `{name, doc}` (a prelude doc starts with the signature line).
+/// `{name, doc}`, as do types and functions (a prelude doc starts with the signature line).
+/// Docs are light Markdown: inline code, `**bold**`, paragraphs and `- ` lists.
 #[wasm_bindgen]
 #[must_use]
 pub fn vocabulary() -> String {
@@ -78,7 +79,7 @@ pub fn vocabulary() -> String {
     json!({
         "keywords": named(KEYWORDS, keyword_doc),
         "contextual": named(CONTEXTUAL_KEYWORDS, keyword_doc),
-        "types": BUILTIN_TYPES,
+        "types": named(BUILTIN_TYPES, type_doc),
         "builtins": named(BUILTIN_FUNCTIONS, builtin_doc),
         "prelude": prelude,
     })
@@ -390,8 +391,8 @@ fn prelude_doc(name: &str) -> String {
         .take_while(|line| line.starts_with("///"))
         .map(|line| line.trim_start_matches('/').trim())
         .collect();
-    let doc: Vec<&str> = doc.into_iter().rev().collect();
-    format!("{signature}\n{}", doc.join(" "))
+    let doc = redsat_lang::signatures::join_doc_lines(doc.into_iter().rev());
+    format!("{signature}\n{doc}")
 }
 
 #[cfg(test)]

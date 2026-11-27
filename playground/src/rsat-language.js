@@ -18,12 +18,13 @@ export function lexicon(vocabulary) {
   for (const { name, doc } of [...vocabulary.keywords, ...vocabulary.contextual]) {
     if (doc) docs.set(name, { kind: 'keyword', doc });
   }
+  for (const { name, doc } of vocabulary.types) if (doc) docs.set(name, { kind: 'type', doc });
   for (const { name, doc } of vocabulary.builtins) docs.set(name, { kind: 'built-in', doc });
   for (const { name, doc } of vocabulary.prelude) docs.set(name, { kind: 'standard library', doc });
   return {
     keywords: new Set(vocabulary.keywords.map((k) => k.name).filter((k) => k !== 'true' && k !== 'false')),
     contextual: new Set(vocabulary.contextual.map((k) => k.name)),
-    types: new Set(vocabulary.types),
+    types: new Set(vocabulary.types.map((t) => t.name)),
     functions: new Set([...vocabulary.builtins.map((f) => f.name), ...vocabulary.prelude.map((f) => f.name)]),
     docs,
     vocabulary,

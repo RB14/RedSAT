@@ -1,6 +1,7 @@
 // The code editor: CodeMirror 6 with RedSAT highlighting, live diagnostics from the compiler,
-// completion with snippets, signature help, hover (docs, types and inferred domains) and
-// go-to-definition (Ctrl/Cmd+click or F12).
+// completion with snippets (Ctrl+Space anywhere), signature help, hover (docs, types and inferred
+// domains), quick documentation at the cursor (Ctrl+Q or Ctrl+K Ctrl+I) and go-to-definition
+// (Ctrl/Cmd+click or F12).
 
 import { basicSetup } from 'codemirror';
 import { indentWithTab } from '@codemirror/commands';
@@ -10,7 +11,7 @@ import { EditorState } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { tags as t } from '@lezer/highlight';
 
-import { clickToDefinition, completionSource, definitionAt, hover, signatureHelp } from './intelligence.js';
+import { clickToDefinition, completionSource, definitionAt, hover, quickDoc, signatureHelp } from './intelligence.js';
 import { rsatLanguage } from './rsat-language.js';
 
 const highlightStyle = HighlightStyle.define([
@@ -49,12 +50,15 @@ const theme = EditorView.theme({
     overflow: 'hidden',
     maxWidth: 'min(480px, 92vw)',
   },
-  '.cm-tooltip-autocomplete > ul': { fontFamily: 'var(--mono)', maxHeight: '16em' },
+  // The selected option's docs are a panel beside the list, outside its box: clipping the list's
+  // tooltip would hide them.
+  '.cm-tooltip.cm-tooltip-autocomplete': { overflow: 'visible' },
+  '.cm-tooltip-autocomplete > ul': { fontFamily: 'var(--mono)', maxHeight: '16em', borderRadius: '8px' },
   '.cm-tooltip-autocomplete > ul > li': { padding: '2px 8px !important', lineHeight: '1.6' },
   '.cm-tooltip-autocomplete > ul > li[aria-selected]': { backgroundColor: 'var(--accent-fill)', color: 'white' },
   '.cm-completionDetail': { color: 'var(--muted)', fontStyle: 'normal', marginLeft: '1em' },
   '.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionDetail': { color: 'rgba(255,255,255,0.8)' },
-  '.cm-completionInfo': { maxWidth: '420px', whiteSpace: 'pre-wrap', fontFamily: 'var(--mono)', fontSize: '12px', padding: '6px 10px' },
+  '.cm-completionInfo': { maxWidth: '440px', padding: '0', overflowY: 'auto', maxHeight: '22em' },
   '.cm-diagnostic': { fontFamily: 'var(--mono)', fontSize: '12.5px', whiteSpace: 'pre-wrap' },
   '.cm-panels': { backgroundColor: 'var(--raised)', color: 'var(--text)' },
   '.cm-snippetField': { backgroundColor: 'var(--selection)' },
@@ -126,6 +130,7 @@ export function createEditor({ parent, words, analyze, onRun, onChange }) {
         ),
         signatureHelp(words, latest),
         hover(words, latest),
+        quickDoc(words, latest),
         clickToDefinition(latest, reveal),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) onChange(update.state.doc.toString());

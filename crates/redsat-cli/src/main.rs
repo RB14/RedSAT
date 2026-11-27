@@ -12,6 +12,8 @@ use std::io::{self, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+mod repl;
+
 use clap::{Args, Parser, Subcommand};
 use redsat_lang::config::{find_config, load_config};
 use redsat_lang::{
@@ -56,6 +58,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Build a program interactively, one statement at a time.
+    Repl {
+        #[command(flatten)]
+        options: OptionArgs,
+
+        /// The SAT solver: `cadical` (the default) or `builtin`.
+        #[arg(long, value_name = "cadical|builtin", default_value = "cadical", value_parser = ["cadical", "builtin"])]
+        solver: String,
+    },
     /// Parse and type-check a program without running it.
     Check {
         /// The `.rsat` program to check.
@@ -123,6 +134,7 @@ fn main() -> ExitCode {
             .map(|()| ExitCode::SUCCESS)
             .map_err(|error| error.to_string().into()),
         Some(Command::Check { file, options }) => check(&file, &options),
+        Some(Command::Repl { options, solver }) => repl(&options, &solver),
         None => run(
             &cli.file.expect("required by clap"),
             &cli.options,
@@ -164,6 +176,36 @@ fn prepare(
     };
     let options = CompilerOptions::resolve(&file_layer, &cli_layer)?;
     Ok((SourceFile::new(file.display().to_string(), text), options))
+}
+
+fn repl(args: &OptionArgs, solver: &str) -> Result<ExitCode, Box<dyn Error>> {
+    let here = std::env::current_dir()?;
+    let config = args.config.clone().or_else(|| find_config(&here));
+    let file_layer = match &config {
+        Some(path) => load_config(path)?,
+        None => OptionLayer::default(),
+    };
+    let options = CompilerOptions::resolve(&file_layer, &cli_layer(args))?;
+    let builtin = solver == "builtin";
+    let factory = move || -> Box<dyn Solver> {
+        if builtin {
+            Box::new(Cdcl::new())
+        } else {
+            Box::new(Cadical::new())
+        }
+    };
+    repl::run(&options, &factory)?;
+    Ok(ExitCode::SUCCESS)
+}
+
+fn cli_layer(args: &OptionArgs) -> OptionLayer {
+    OptionLayer {
+        strict: args.strict.then_some(true),
+        explicit_types: args.explicit_types,
+        unbounded_ints: args.unbounded_ints,
+        fallback_int_bits: args.fallback_int_bits,
+        max_int_bits: args.max_int_bits,
+    }
 }
 
 fn report(source: &SourceFile, diagnostics: &[Diagnostic]) {

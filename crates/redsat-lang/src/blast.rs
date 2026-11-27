@@ -60,6 +60,10 @@ impl Blasted {
     }
 }
 
+/// The largest totalizer (booleans × outputs) built for a counting constraint; beyond it, the
+/// count stays a binary sum.
+const TOTALIZER_BUDGET: usize = 200_000;
+
 /// The smallest layout for a bounded range.
 pub(crate) fn layout_of(range: &Interval) -> Layout {
     let (lo, hi) = range.bounds().expect("sizes of blasted terms are bounded");
@@ -203,6 +207,9 @@ impl Blaster<'_> {
             }
             Term::AllDifferent(items) => Bits::Bool(self.all_different(items)),
             Term::Eq(a, b) | Term::Lt(a, b) | Term::Le(a, b) => {
+                if let Some(edge) = self.cardinality(term) {
+                    return Bits::Bool(edge);
+                }
                 let (x, y) = (self.int_of(*a), self.int_of(*b));
                 Bits::Bool(match term {
                     Term::Eq(..) => int::eq(self.aig, &x, &y),
@@ -211,6 +218,116 @@ impl Blaster<'_> {
                 })
             }
         }
+    }
+
+    /// A count compared with a constant (`count(…) <= k`, `exactly`, `at_least`, `at_most`),
+    /// encoded with a totalizer instead of an adder and a comparator: unit propagation then
+    /// enforces the bound by itself (arc consistency), which the binary encoding does not.
+    fn cardinality(&mut self, term: &Term) -> Option<Edge> {
+        let (Term::Eq(a, b) | Term::Lt(a, b) | Term::Le(a, b)) = term else {
+            return None;
+        };
+        let constant = |id: TermId| match self.store.term(id) {
+            Term::Const(Constant::Int(value)) => Some(value.clone()),
+            _ => None,
+        };
+        let (bools, offset, k, count_on_left) = match (self.as_count(*a), constant(*b)) {
+            (Some((bools, offset)), Some(k)) => (bools, offset, k, true),
+            _ => match (constant(*a), self.as_count(*b)) {
+                (Some(k), Some((bools, offset))) => (bools, offset, k, false),
+                _ => return None,
+            },
+        };
+        let n = i64::try_from(bools.len()).ok()?;
+        // The bound on the number of true booleans (clamped: anything beyond 0..=n is decided).
+        let m = i64::try_from((k - offset).clamp(BigInt::from(-1), BigInt::from(n + 1))).ok()?;
+        let (lo, hi) = match (term, count_on_left) {
+            (Term::Eq(..), _) => (m, m),
+            (Term::Le(..), true) => (0, m),
+            (Term::Le(..), false) => (m, n),
+            (Term::Lt(..), true) => (0, m - 1),
+            _ => (m + 1, n),
+        };
+        let (lo, hi) = (lo.max(0), hi.min(n));
+        if lo > hi {
+            return Some(Edge::FALSE);
+        }
+        if lo == 0 && hi == n {
+            return Some(Edge::TRUE);
+        }
+        if hi == 0 {
+            return Some(self.aig.and_all(bools.iter().map(|&b| !b)));
+        }
+        if lo == n {
+            return Some(self.aig.and_all(bools));
+        }
+        // Outputs up to hi + 1 are needed; a totalizer that large costs about n·(hi + 1) gates.
+        let limit = usize::try_from((hi + 1).min(n)).ok()?;
+        if bools.len().saturating_mul(limit) > TOTALIZER_BUDGET {
+            return None;
+        }
+        let outputs = self.totalizer(&bools, limit);
+        let mut bounds = Vec::new();
+        if lo > 0 {
+            bounds.push(outputs[usize::try_from(lo).ok()? - 1]);
+        }
+        if hi < n {
+            bounds.push(!outputs[usize::try_from(hi).ok()?]);
+        }
+        Some(self.aig.and_all(bounds))
+    }
+
+    /// The booleans of a count and its constant part, if `id` is one: a sum (any tree of `+`)
+    /// of `b ? 1 : 0` (or `b ? 0 : 1`) terms and constants, as `count(…)` produces.
+    fn as_count(&self, id: TermId) -> Option<(Vec<Edge>, BigInt)> {
+        let mut bools = Vec::new();
+        let mut offset = BigInt::zero();
+        let mut pending = vec![id];
+        while let Some(term) = pending.pop() {
+            match self.store.term(term) {
+                Term::Add(a, b) => pending.extend([*a, *b]),
+                Term::Const(Constant::Int(value)) => offset += value,
+                Term::Ite(cond, then, otherwise) => {
+                    let value = |id: TermId| match self.store.term(id) {
+                        Term::Const(Constant::Int(value)) => Some(value.clone()),
+                        _ => None,
+                    };
+                    let edge = self.of(*cond).edge();
+                    match (value(*then)?, value(*otherwise)?) {
+                        (one, zero) if one.is_one() && zero.is_zero() => bools.push(edge),
+                        (zero, one) if one.is_one() && zero.is_zero() => bools.push(!edge),
+                        _ => return None,
+                    }
+                }
+                _ => return None,
+            }
+        }
+        (bools.len() >= 2).then_some((bools, offset))
+    }
+
+    /// A totalizer (Bailleux and Boufkhad, 2003): `outputs[j]` holds exactly when at least
+    /// `j + 1` of `bools` hold, for `j < limit` (outputs beyond what a bound needs are left out).
+    fn totalizer(&mut self, bools: &[Edge], limit: usize) -> Vec<Edge> {
+        if bools.len() == 1 {
+            return bools.to_vec();
+        }
+        let (left, right) = bools.split_at(bools.len() / 2);
+        let (left, right) = (self.totalizer(left, limit), self.totalizer(right, limit));
+        let size = (left.len() + right.len()).min(limit);
+        (1..=size)
+            .map(|total| {
+                let ways: Vec<Edge> = (0..=total.min(left.len()))
+                    .filter(|&i| total - i <= right.len())
+                    .map(|i| {
+                        let a = if i == 0 { Edge::TRUE } else { left[i - 1] };
+                        let j = total - i;
+                        let b = if j == 0 { Edge::TRUE } else { right[j - 1] };
+                        self.aig.and(a, b)
+                    })
+                    .collect();
+                self.aig.or_all(ways)
+            })
+            .collect()
     }
 
     /// `all_different(items)`: the conjunction of pairwise inequalities.
@@ -297,6 +414,72 @@ pub(crate) fn default_value(sort: Sort, domain: &Interval) -> Constant {
                 _ => zero,
             };
             Constant::Int(value)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::source::Span;
+
+    /// Counting constraints, exhaustively: `count op k` and `k op count` for every operator,
+    /// every bound from -1 to n + 1 and every assignment of n booleans, n up to 6, give the
+    /// same answer as arithmetic. (Bounds may be decided outright, or need a totalizer.)
+    #[test]
+    fn counting_constraints_match_arithmetic() {
+        for n in 2..=6_usize {
+            for k in -1..=i64::try_from(n).expect("small") + 1 {
+                for op in 0..6 {
+                    let mut store = TermStore::default();
+                    let bools: Vec<TermId> = (0..n)
+                        .map(|i| {
+                            store.new_unknown(
+                                format!("b{i}"),
+                                Sort::Bool,
+                                Interval::full(),
+                                Span::default(),
+                            )
+                        })
+                        .collect();
+                    let (one, zero) = (store.int(BigInt::one()), store.int(BigInt::zero()));
+                    let indicators: Vec<TermId> =
+                        bools.iter().map(|&b| store.ite(b, one, zero)).collect();
+                    let count = indicators[1..]
+                        .iter()
+                        .fold(indicators[0], |sum, &term| store.add(sum, term));
+                    let bound = store.int(BigInt::from(k));
+                    let comparison = match op {
+                        0 => store.eq(count, bound),
+                        1 => store.le(count, bound),
+                        2 => store.lt(count, bound),
+                        3 => store.le(bound, count),
+                        4 => store.lt(bound, count),
+                        _ => store.eq(bound, count),
+                    };
+                    let domains = vec![Interval::full(); store.unknowns().len()];
+                    let sizes = domain::forward_sizes(&store, &domains);
+                    let mut aig = Aig::new();
+                    let blasted = blast(&store, &sizes, &domains, &[comparison], &mut aig);
+                    let edge = blasted.of(comparison).edge();
+                    for mask in 0..1_u32 << n {
+                        let inputs: Vec<bool> = (0..n).map(|i| mask >> i & 1 == 1).collect();
+                        let ones = i64::from(mask.count_ones());
+                        let expected = match op {
+                            0 | 5 => ones == k,
+                            1 => ones <= k,
+                            2 => ones < k,
+                            3 => k <= ones,
+                            _ => k < ones,
+                        };
+                        assert_eq!(
+                            aig.simulate(&inputs).value(edge),
+                            expected,
+                            "n = {n}, k = {k}, op {op}, mask {mask:b}"
+                        );
+                    }
+                }
+            }
         }
     }
 }

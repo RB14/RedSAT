@@ -1,0 +1,18 @@
+// N-Queens on a board of booleans, the classic cardinality model: exactly one queen per row and
+// per column, at most one per diagonal. Exercises `exactly` and `at_most` (counting constraints).
+
+var n = 30
+var q: [[bool; n]; n]
+
+for i in 0..n {
+    require exactly(1, [q[i][j] for j in 0..n])
+    require exactly(1, [q[j][i] for j in 0..n])
+}
+for d in 0..2 * n - 1 {
+    require at_most(1, [q[i][d - i] for i in 0..n if d - i >= 0 and d - i < n])
+    require at_most(1, [q[i][i - d + n - 1] for i in 0..n if i - d + n - 1 >= 0 and i - d + n - 1 < n])
+}
+
+solve q {
+    print count(q[i][j] for i in 0..n for j in 0..n)
+}

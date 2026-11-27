@@ -1,0 +1,29 @@
+// Nurse rostering: 14 nurses, 14 days, 3 shifts (morning, evening, night). Every shift needs
+// exactly 3 nurses; a nurse works at most one shift a day, between 7 and 9 shifts in the two
+// weeks, at most 3 nights, and never a morning right after a night. Counting constraints only.
+
+var nurses = 14
+var days = 14
+var shifts = 3
+var works: [[[bool; shifts]; days]; nurses]
+
+for d in 0..days {
+    for s in 0..shifts {
+        require exactly(3, [works[n][d][s] for n in 0..nurses])
+    }
+}
+for n in 0..nurses {
+    for d in 0..days {
+        require at_most(1, works[n][d])
+    }
+    require at_least(7, [works[n][d][s] for d in 0..days for s in 0..shifts])
+    require at_most(9, [works[n][d][s] for d in 0..days for s in 0..shifts])
+    require at_most(3, [works[n][d][2] for d in 0..days])
+    for d in 1..days {
+        require not (works[n][d - 1][2] and works[n][d][0])
+    }
+}
+
+solve works {
+    print count(works[n][d][s] for n in 0..nurses for d in 0..days for s in 0..shifts)
+}

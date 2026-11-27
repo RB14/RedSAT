@@ -62,10 +62,10 @@ solve on {
 
 ```text
       Mo Tu We Th Fr Sa Su
-Ann   .  .  X  X  .  .  X  (3 days)
+Ann   .  X  X  .  X  X  .  (4 days)
 Ben   X  X  .  .  .  X  X  (4 days)
-Cleo  .  .  X  .  X  X  .  (3 days)
-Dev   X  X  .  X  X  .  .  (4 days)
+Cleo  X  .  X  X  .  .  .  (3 days)
+Dev   .  .  .  X  X  .  X  (3 days)
 ```
 
 The body pads names with a `while` loop. That loop's condition is known (inside a body,
@@ -96,7 +96,7 @@ w = "caba"
 w = "baba"
 w = "acac"
 w = "acab"
-w = "abca"
 w = "baca"
+w = "abca"
 w = "acba"
 ```

@@ -635,14 +635,21 @@ choice below was **measured** with the benchmark suite in `bench/` (`bench/run.s
   pairwise inequality was kept.
 - **`sum` and `count`** build balanced addition trees, so intermediate widths grow with the
   logarithm of the number of terms.
+- **Counting constraints.** A count compared with a constant (`count(…) <= k`, `exactly`,
+  `at_least`, `at_most`) is encoded with a *totalizer* (Bailleux and Boufkhad, 2003), whose
+  unary outputs `count ≥ j` are truncated at `k + 1`, instead of an adder and a comparator.
+  Unit propagation then enforces the bound on its own (arc consistency). On N-Queens over a
+  30×30 Boolean board the CNF shrank from 29,396 variables and 84,944 clauses to 4,148 and 9,978,
+  and solving went from 398 ms to 40 ms. A 14-nurse roster went from 414 ms to 277 ms. Bounds
+  that are trivially true or false are decided outright, and very large totalizers
+  (n·k > 200,000) fall back to the binary sum.
 - **Division** by a constant power of two is a bit slice; other divisions are relational.
 
 `--stats` splits each `solve` into *build* time (domains, circuit, CNF) and *search* time (SAT
 calls, decoding). On the largest benchmark (quasigroup completion of order 20: 123k AND gates)
 build takes 60 ms and search 530 ms. The SAT solver dominates, as it should.
 
-Cardinality networks (totalizers, sequential counters) and automatic symmetry breaking remain
-open experiments.
+Automatic symmetry breaking remains an open experiment.
 
 ### 5.6 Solver backends
 

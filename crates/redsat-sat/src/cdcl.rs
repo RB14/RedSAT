@@ -583,7 +583,10 @@ impl Cdcl {
                 self.conflicts += 1;
                 conflicts += 1;
                 if self.stop.load(std::sync::atomic::Ordering::Relaxed)
-                    || self.terminator.as_ref().is_some_and(|terminate| terminate())
+                    || self
+                        .terminator
+                        .as_ref()
+                        .is_some_and(|terminate| terminate())
                 {
                     self.backtrack(0);
                     return Some(SolveResult::Unknown);

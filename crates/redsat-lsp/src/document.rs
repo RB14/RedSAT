@@ -6,6 +6,7 @@ use std::time::Duration;
 use lsp_types::{Position, Range};
 use redsat_lang::check::TypeInfo;
 use redsat_lang::config::{find_config, load_config};
+use redsat_lang::signatures::FunctionInfo;
 use redsat_lang::{Analysis, CompilerOptions, OptionLayer, SourceFile, Span};
 
 /// How long elaborating a program for editor features may take.
@@ -83,6 +84,8 @@ pub struct Document {
     /// Types and symbols from the latest version that type-checked, used for completion while
     /// the text is temporarily broken.
     pub last_types: Option<TypeInfo>,
+    /// Functions (with signatures and docs) from the latest version that parsed.
+    pub last_functions: Vec<FunctionInfo>,
 }
 
 impl Document {
@@ -108,10 +111,22 @@ impl Document {
             .diagnostics
             .iter()
             .any(redsat_lang::Diagnostic::is_error);
+        let previous_functions = previous
+            .as_ref()
+            .map(|previous| previous.last_functions.clone());
         let last_types = match (&analysis.types, previous) {
             (Some(types), _) if !has_errors || !types.symbols.is_empty() => Some(types.clone()),
             (_, Some(previous)) => previous.last_types,
             _ => None,
+        };
+        // While the text does not parse, keep the functions of the last version that did (or at
+        // least the standard library's).
+        let last_functions = if !analysis.functions.is_empty() {
+            analysis.functions.clone()
+        } else {
+            previous_functions
+                .filter(|functions| !functions.is_empty())
+                .unwrap_or_else(|| redsat_lang::signatures::prelude_functions().to_vec())
         };
         Self {
             version,
@@ -119,6 +134,7 @@ impl Document {
             index,
             analysis,
             last_types,
+            last_functions,
         }
     }
 

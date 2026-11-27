@@ -3,14 +3,15 @@
 //! testable without the protocol.
 
 use lsp_types::{
-    CompletionItem, CompletionItemKind, Diagnostic as LspDiagnostic, DiagnosticRelatedInformation,
-    DiagnosticSeverity, Documentation, InlayHint, InlayHintKind, InlayHintLabel, InsertTextFormat,
-    Location, Range, SymbolInformation, SymbolKind as LspSymbolKind, Uri,
+    Command, CompletionItem, CompletionItemKind, CompletionItemLabelDetails,
+    Diagnostic as LspDiagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Documentation,
+    InlayHint, InlayHintKind, InlayHintLabel, InsertTextFormat, Location, MarkupContent,
+    MarkupKind, ParameterInformation, ParameterLabel, Range, SignatureHelp, SignatureInformation,
+    SymbolInformation, SymbolKind as LspSymbolKind, Uri,
 };
 use redsat_lang::check::{Symbol, SymbolKind, TypeInfo};
-use redsat_lang::syntax::{
-    BUILTIN_FUNCTIONS, BUILTIN_TYPES, CONTEXTUAL_KEYWORDS, KEYWORDS, builtin_doc, keyword_doc,
-};
+use redsat_lang::signatures::{FunctionInfo, Origin, builtin_functions, call_at};
+use redsat_lang::syntax::{BUILTIN_TYPES, CONTEXTUAL_KEYWORDS, KEYWORDS, keyword_doc};
 use redsat_lang::{Severity, Span};
 
 use crate::document::Document;
@@ -213,7 +214,10 @@ pub fn completions(document: &Document, offset: usize) -> Vec<CompletionItem> {
         }
     }
     let line_has_solve = line.trim_start().starts_with("solve");
-    for symbol in visible(types, offset) {
+    for symbol in visible(types, offset)
+        .into_iter()
+        .filter(|s| s.kind != SymbolKind::Function)
+    {
         let kind = match symbol.kind {
             SymbolKind::Variable | SymbolKind::Parameter | SymbolKind::LoopVariable => {
                 CompletionItemKind::VARIABLE
@@ -222,31 +226,15 @@ pub fn completions(document: &Document, offset: usize) -> Vec<CompletionItem> {
             SymbolKind::Enum => CompletionItemKind::ENUM,
             SymbolKind::Struct => CompletionItemKind::STRUCT,
         };
-        let doc = (symbol.kind == SymbolKind::Function)
-            .then(|| prelude_doc(&symbol.name))
-            .flatten();
-        let mut entry = item(
-            &symbol.name,
-            kind,
-            Some(symbol.detail.clone()),
-            doc.as_deref(),
-        );
-        if matches!(symbol.kind, SymbolKind::Function | SymbolKind::Struct) {
+        let mut entry = item(&symbol.name, kind, Some(symbol.detail.clone()), None);
+        if symbol.kind == SymbolKind::Struct {
             entry.insert_text = Some(format!("{}($1)", symbol.name));
             entry.insert_text_format = Some(InsertTextFormat::SNIPPET);
         }
         items.push(entry);
     }
-    for function in BUILTIN_FUNCTIONS {
-        let mut entry = item(
-            function,
-            CompletionItemKind::FUNCTION,
-            Some("built-in".into()),
-            Some(builtin_doc(function).unwrap_or_default()),
-        );
-        entry.insert_text = Some(format!("{function}($1)"));
-        entry.insert_text_format = Some(InsertTextFormat::SNIPPET);
-        items.push(entry);
+    for function in document.last_functions.iter().chain(&builtin_functions()) {
+        items.push(function_item(function));
     }
     items.extend(keyword_items());
     if line_has_solve {
@@ -260,6 +248,102 @@ pub fn completions(document: &Document, offset: usize) -> Vec<CompletionItem> {
         }
     }
     items
+}
+
+/// A completion item that calls `function`, with a placeholder per parameter and its docs.
+fn function_item(function: &FunctionInfo) -> CompletionItem {
+    CompletionItem {
+        label: function.name.clone(),
+        kind: Some(CompletionItemKind::FUNCTION),
+        detail: Some(function.label()),
+        label_details: Some(CompletionItemLabelDetails {
+            detail: Some(format!(
+                "({})",
+                function
+                    .params
+                    .iter()
+                    .map(|p| p.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+            description: Some(origin_name(function.origin).into()),
+        }),
+        documentation: Some(Documentation::MarkupContent(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: function_markdown(function),
+        })),
+        insert_text: Some(function.call_snippet()),
+        insert_text_format: Some(InsertTextFormat::SNIPPET),
+        // Show the signature as soon as the call is inserted.
+        command: Some(Command::new(
+            "Signature help".into(),
+            "editor.action.triggerParameterHints".into(),
+            None,
+        )),
+        ..CompletionItem::default()
+    }
+}
+
+fn origin_name(origin: Origin) -> &'static str {
+    match origin {
+        Origin::Program => "your function",
+        Origin::Prelude => "standard library",
+        Origin::Builtin => "built-in",
+    }
+}
+
+/// The signature in a code block, then the doc, then where the function comes from.
+fn function_markdown(function: &FunctionInfo) -> String {
+    let mut text = format!("```rsat\nfn {}\n```", function.label());
+    if !function.doc.is_empty() {
+        text.push_str(&format!("\n\n{}", function.doc));
+    }
+    text.push_str(&format!("\n\n*{}*", origin_name(function.origin)));
+    text
+}
+
+/// The function called `name`: the program's (or the prelude's), else a built-in.
+fn function_named(document: &Document, name: &str) -> Option<FunctionInfo> {
+    document
+        .last_functions
+        .iter()
+        .find(|f| f.name == name)
+        .cloned()
+        .or_else(|| builtin_functions().into_iter().find(|f| f.name == name))
+}
+
+/// Signature help inside a call's parentheses at `offset`.
+#[must_use]
+pub fn signature_help(document: &Document, offset: usize) -> Option<SignatureHelp> {
+    let (name, argument, _) = call_at(document.text(), offset)?;
+    let function = function_named(document, &name)?;
+    let label = function.label();
+    let utf16 =
+        |byte: usize| u32::try_from(label[..byte].encode_utf16().count()).unwrap_or(u32::MAX);
+    let parameters = function
+        .param_ranges()
+        .into_iter()
+        .map(|(start, end)| ParameterInformation {
+            label: ParameterLabel::LabelOffsets([utf16(start), utf16(end)]),
+            documentation: None,
+        })
+        .collect::<Vec<_>>();
+    let active = u32::try_from(argument.min(parameters.len().saturating_sub(1))).ok();
+    Some(SignatureHelp {
+        signatures: vec![SignatureInformation {
+            label,
+            documentation: (!function.doc.is_empty()).then(|| {
+                Documentation::MarkupContent(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: function.doc.clone(),
+                })
+            }),
+            parameters: Some(parameters),
+            active_parameter: active,
+        }],
+        active_signature: Some(0),
+        active_parameter: active,
+    })
 }
 
 fn item(
@@ -385,17 +469,16 @@ pub fn hover(document: &Document, offset: usize) -> Option<(Range, String)> {
         }
     }
     if let Some(symbol) = types.and_then(|types| resolve(types, word, span)) {
+        if symbol.kind == SymbolKind::Function {
+            if let Some(function) = function_named(document, word) {
+                return Some((range, function_markdown(&function)));
+            }
+        }
         let types = types.expect("resolved through types");
         return Some((range, describe(document, types, symbol)));
     }
-    if BUILTIN_FUNCTIONS.contains(&word) {
-        return Some((
-            range,
-            format!(
-                "```rsat\n{word}\n```\n{}",
-                builtin_doc(word).unwrap_or_default()
-            ),
-        ));
+    if let Some(function) = function_named(document, word) {
+        return Some((range, function_markdown(&function)));
     }
     if KEYWORDS.contains(&word) || CONTEXTUAL_KEYWORDS.contains(&word) {
         return keyword_doc(word).map(|doc| (range, doc.to_string()));
@@ -587,6 +670,54 @@ mod tests {
 
     fn labels(items: &[CompletionItem]) -> Vec<&str> {
         items.iter().map(|i| i.label.as_str()).collect()
+    }
+
+    #[test]
+    fn completes_library_functions_with_parameters_and_docs() {
+        let doc = document("var n: int[0..=9999]\nrequire dig");
+        let items = completions(&doc, doc.text().len());
+        let digits = items
+            .iter()
+            .find(|i| i.label == "digits")
+            .expect("standard library");
+        assert_eq!(
+            digits.detail.as_deref(),
+            Some("digits(n: int, k: int) -> [int]")
+        );
+        assert_eq!(
+            digits.insert_text.as_deref(),
+            Some("digits(${1:n}, ${2:k})")
+        );
+        let Some(Documentation::MarkupContent(doc)) = &digits.documentation else {
+            panic!("markdown docs")
+        };
+        assert!(doc.value.contains("decimal digits") && doc.value.contains("standard library"));
+        let abs = items.iter().find(|i| i.label == "abs").expect("built-in");
+        assert_eq!(abs.insert_text.as_deref(), Some("abs(${1:x})"));
+    }
+
+    #[test]
+    fn helps_with_signatures_while_typing_arguments() {
+        // As when typing: the program parsed a moment ago, and the call is not finished yet.
+        let before = "/// Clamped to 0..=9.\nfn squash(v: int, top: int) -> int { return min(v, top) }\nvar x: int[0..=20]\n";
+        let text = format!("{before}require squash(x, ");
+        let text = text.as_str();
+        let doc = Document::update(Some(document(before)), 2, text.to_string(), None);
+        let help = signature_help(&doc, text.len()).expect("inside a call");
+        let signature = &help.signatures[0];
+        assert_eq!(signature.label, "squash(v: int, top: int) -> int");
+        assert_eq!(help.active_parameter, Some(1));
+        let Some(ParameterLabel::LabelOffsets([start, end])) =
+            signature.parameters.as_ref().map(|p| p[1].label.clone())
+        else {
+            panic!("offsets")
+        };
+        assert_eq!(&signature.label[start as usize..end as usize], "top: int");
+        let (_, hover_text) = hover(&doc, text.find("squash(x").expect("call")).expect("hover");
+        assert!(hover_text.contains("Clamped to 0..=9.") && hover_text.contains("your function"));
+        let library = document("require digit_sum(4096, ");
+        let help = signature_help(&library, library.text().len()).expect("prelude call");
+        assert_eq!(help.active_parameter, Some(1));
     }
 
     #[test]

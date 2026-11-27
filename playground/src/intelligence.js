@@ -58,8 +58,9 @@ export function librarySignatures(vocabulary) {
   return signatures;
 }
 
-/** Signatures of the functions declared in `text`, by name (with where each is declared). */
-export function programSignatures(text) {
+/** Signatures of the functions declared in `text`, by name (with where each is declared), with
+ * the `///` docs the compiler's latest analysis found for them. */
+export function programSignatures(text, analysis = null) {
   const signatures = new Map();
   const pattern = /\bfn\s+([A-Za-z_]\w*)\s*\(([^)]*)\)\s*(?:->\s*([^{\n]+?))?\s*\{/g;
   for (const match of text.matchAll(pattern)) {
@@ -68,7 +69,7 @@ export function programSignatures(text) {
       name,
       label: `${name}(${params.trim()})${result ? ` -> ${result.trim()}` : ''}`,
       params: splitParams(params),
-      doc: '',
+      doc: analysis?.functions?.find((f) => f.name === name)?.doc ?? '',
       kind: 'your function',
       from: match.index + match[0].indexOf(name),
     });
@@ -227,11 +228,16 @@ export function completionSource(words, latest) {
     if (!word || (word.from === word.to && !context.explicit)) return null;
     if (/\d$/.test(before.slice(0, before.length - word.text.length))) return null; // e.g. `0..9`
 
-    const own = programSignatures(text);
+    const own = programSignatures(text, analysis);
     const functionOptions = [...own.values()]
       .filter((signature) => signature.name !== word.text)
       .map((signature) =>
-        snippetCompletion(callSnippet(signature), { label: signature.name, type: 'function', detail: signature.label.slice(signature.name.length) }),
+        snippetCompletion(callSnippet(signature), {
+          label: signature.name,
+          type: 'function',
+          detail: signature.label.slice(signature.name.length),
+          info: signature.doc ? `${signature.label}\n${signature.doc}` : undefined,
+        }),
       );
     const seen = new Set([...own.keys(), word.text]);
     const symbolOptions = [];
@@ -288,13 +294,13 @@ function callAt(text, pos) {
   return null;
 }
 
-function signatureTooltip(state, library) {
+function signatureTooltip(state, library, analysis) {
   const selection = state.selection.main;
   if (!selection.empty) return null;
   const text = state.doc.toString();
   const call = callAt(text, selection.head);
   if (!call) return null;
-  const signature = programSignatures(text).get(call.name) ?? library.get(call.name);
+  const signature = programSignatures(text, analysis).get(call.name) ?? library.get(call.name);
   if (!signature) return null;
   return {
     pos: call.open,
@@ -331,12 +337,12 @@ function signatureTooltip(state, library) {
 }
 
 /** Shows the signature of the function being called, highlighting the current argument. */
-export function signatureHelp(words) {
+export function signatureHelp(words, latest) {
   const library = librarySignatures(words.vocabulary);
   return StateField.define({
-    create: (state) => signatureTooltip(state, library),
+    create: (state) => signatureTooltip(state, library, latest()),
     update: (value, transaction) =>
-      transaction.docChanged || transaction.selection ? signatureTooltip(transaction.state, library) : value,
+      transaction.docChanged || transaction.selection ? signatureTooltip(transaction.state, library, latest()) : value,
     provide: (field) => showTooltip.from(field),
   });
 }
@@ -375,7 +381,7 @@ export function hover(words, latest) {
     if (!word) return null;
     const analysis = latest();
     const domain = analysis?.domains?.find((d) => d.name === word.text || d.name.split(/[.[]/)[0] === word.text);
-    const own = programSignatures(view.state.doc.toString()).get(word.text);
+    const own = programSignatures(view.state.doc.toString(), analysis).get(word.text);
     const symbol = visibleSymbol(analysis, word.text, pos);
     const signature = library.get(word.text);
     const keyword = words.docs.get(word.text);
@@ -385,7 +391,9 @@ export function hover(words, latest) {
       const unknowns = domain.unknowns > 1 ? `${domain.unknowns} unknowns, ` : '';
       parts.push(element('', `inferred domain · ${unknowns}${domain.width} bit${domain.width === 1 ? '' : 's'} each`));
     } else if (own) {
-      parts.push(element('hover-head', `fn ${own.label}`), element('hover-kind', 'your function · Ctrl+click to go to it'));
+      parts.push(element('hover-head', `fn ${own.label}`));
+      if (own.doc) parts.push(element('', own.doc));
+      parts.push(element('hover-kind', 'your function · Ctrl+click to go to it'));
     } else if (symbol) {
       parts.push(element('hover-head', `${symbol.name}: ${symbol.detail}`), element('hover-kind', symbol.kind));
     } else if (signature) {

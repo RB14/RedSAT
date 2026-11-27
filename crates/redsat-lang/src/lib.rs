@@ -20,6 +20,7 @@ pub mod ir;
 pub mod lexer;
 pub mod load;
 pub mod parser;
+pub mod signatures;
 mod solve;
 pub mod source;
 pub mod syntax;
@@ -282,6 +283,9 @@ pub struct Analysis {
     pub domains: Vec<InferredDomain>,
     /// Every file of the program.
     pub sources: SourceMap,
+    /// The program's functions and the standard library's, with signatures and docs (empty
+    /// when the program does not parse).
+    pub functions: Vec<signatures::FunctionInfo>,
 }
 
 /// Analyses `source` for editor tooling: parses, type-checks, and elaborates the program as a run
@@ -303,9 +307,11 @@ pub fn analyze(
                     types: None,
                     domains: Vec::new(),
                     sources,
+                    functions: Vec::new(),
                 };
             }
         };
+        let functions = signatures::program_functions(&program, &sources);
         let (types, mut diagnostics) = check::check(&program, options);
         if diagnostics.iter().any(Diagnostic::is_error) {
             return Analysis {
@@ -313,6 +319,7 @@ pub fn analyze(
                 types: Some(types),
                 domains: Vec::new(),
                 sources,
+                functions,
             };
         }
         let factory = || -> Box<dyn Solver> { unreachable!("analysis never solves") };
@@ -344,6 +351,7 @@ pub fn analyze(
             types: Some(types),
             domains,
             sources,
+            functions,
         }
     })
 }

@@ -81,7 +81,7 @@ function toLint(diagnostics, length) {
 export function createEditor({ parent, words, analyze, onRun, onChange }) {
   // The latest analysis. Symbols, structs and enums survive analyses of text that does not
   // parse, so completion keeps working while you type.
-  const analysis = { domains: [], symbols: [], structs: [], enums: [] };
+  const analysis = { domains: [], symbols: [], structs: [], enums: [], functions: [] };
   const latest = () => analysis;
   const language = rsatLanguage(words);
   let view;
@@ -115,6 +115,7 @@ export function createEditor({ parent, words, analyze, onRun, onChange }) {
             if (!result) return [];
             analysis.domains = result.domains;
             if (result.symbols) {
+              analysis.functions = result.functions;
               analysis.symbols = result.symbols;
               analysis.structs = result.structs;
               analysis.enums = result.enums;
@@ -123,7 +124,7 @@ export function createEditor({ parent, words, analyze, onRun, onChange }) {
           },
           { delay: 300 },
         ),
-        signatureHelp(words),
+        signatureHelp(words, latest),
         hover(words, latest),
         clickToDefinition(latest, reveal),
         EditorView.updateListener.of((update) => {

@@ -209,9 +209,17 @@ pub fn analyze(name: &str, source: &str, config: &str, budget_ms: u32) -> Result
             types.enums.iter().map(|info| json!({ "name": info.name, "variants": info.variants })).collect();
         (Value::from(symbols), Value::from(structs), Value::from(enums))
     });
+    // Your functions, with their `///` docs (the standard library's come with `vocabulary()`).
+    let functions: Vec<Value> = analysis
+        .functions
+        .iter()
+        .filter(|function| function.origin == redsat_lang::signatures::Origin::Program)
+        .map(|function| json!({ "name": function.name, "label": function.label(), "doc": function.doc }))
+        .collect();
     Ok(json!({
         "diagnostics": diagnostics_json(&analysis.diagnostics, &analysis.sources),
         "domains": domains,
+        "functions": functions,
         "symbols": symbols,
         "structs": structs,
         "enums": enums,

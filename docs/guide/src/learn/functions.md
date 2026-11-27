@@ -232,3 +232,23 @@ functions that call it. For example, the standard `is_letter` calls `is_lower`, 
 
 The built-in functions such as `sum` and `len` are part of the language itself, and their names
 cannot be reused for functions.
+
+## Documenting your functions
+
+Lines starting with `///` right above a function are its documentation. Editors show it when
+you hover the function's name, in the completion list, and in the signature help that pops up
+while you type its arguments (in VS Code and in the playground). The standard library documents
+its functions the same way.
+
+```rsat
+/// The larger of `a` and `b`, but never above 9.
+fn capped_max(a: int, b: int) -> int {
+    return min(max(a, b), 9)
+}
+
+print capped_max(4, 12)
+```
+
+```text
+9
+```

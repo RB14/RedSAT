@@ -18,14 +18,16 @@ use lsp_types::notification::{
     PublishDiagnostics,
 };
 use lsp_types::request::{
-    Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, InlayHintRequest, Request as _,
+    Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, InlayHintRequest,
+    Request as _, SignatureHelpRequest,
 };
 use lsp_types::{
     CompletionOptions, CompletionParams, CompletionResponse, DocumentSymbolParams,
     DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
     HoverParams, HoverProviderCapability, InlayHintParams, Location, MarkupContent, MarkupKind,
-    OneOf, PublishDiagnosticsParams, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
-    TextDocumentSyncKind, Uri,
+    OneOf, PublishDiagnosticsParams, ServerCapabilities, ServerInfo, SignatureHelpOptions,
+    SignatureHelpParams, TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
+    WorkDoneProgressOptions,
 };
 
 pub use document::{Document, LineIndex};
@@ -46,6 +48,11 @@ pub fn run_stdio() -> Result<()> {
             ..CompletionOptions::default()
         }),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
+        signature_help_provider: Some(SignatureHelpOptions {
+            trigger_characters: Some(vec!["(".into(), ",".into()]),
+            retrigger_characters: None,
+            work_done_progress_options: WorkDoneProgressOptions::default(),
+        }),
         definition_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
         inlay_hint_provider: Some(OneOf::Left(true)),
@@ -103,6 +110,14 @@ impl Server<'_> {
                     )))
                 },
                 |params| &params.text_document_position.text_document.uri,
+            ),
+            SignatureHelpRequest::METHOD => self.handle::<SignatureHelpParams, _>(
+                request,
+                |doc, params| {
+                    let offset = doc.offset(params.text_document_position_params.position);
+                    features::signature_help(doc, offset)
+                },
+                |params| &params.text_document_position_params.text_document.uri,
             ),
             HoverRequest::METHOD => self.handle::<HoverParams, _>(
                 request,

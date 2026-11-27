@@ -1,0 +1,9 @@
+// The smallest eight-digit number with given remainders modulo small primes (the Chinese
+// remainder theorem): a benchmark for remainders by constants.
+var x: int[10000000..=99999999]
+var residues = [3, 5, 2, 9, 4]
+var primes = [7, 11, 13, 17, 19]
+for i in 0..5 {
+    require x % primes[i] == residues[i]
+}
+solve x minimize x

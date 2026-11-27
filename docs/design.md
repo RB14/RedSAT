@@ -652,7 +652,17 @@ choice below was **measured** with the benchmark suite in `bench/` (`bench/run.s
   larger and solving 7–27× slower, the "large weights favor binary" effect reported by
   Ulrich-Oltean, Nightingale and Walker (Constraints 2023), so they keep the binary sum. The
   small knapsack example's CNF shrinks from 408 to 87 clauses.
-- **Division** by a constant power of two is a bit slice; other divisions are relational.
+- **Division** by a constant power of two is a bit slice; other divisions are relational: a
+  quotient and a remainder constrained by `x = q·m + r`, `0 ≤ r < |m|`.
+  - *Measured and rejected: remainders by constants from `x`'s bits.* `x mod m` equals
+    `Σ bᵢ·(2ⁱ mod m)` reduced below `m` (bits of equal weight counted together, then a few
+    conditional subtractions). That circuit adds no unknowns, and propagation computes `r` from
+    `x`. On the 100-digit factoring example it removed 3,424 inputs and 30% of the residues'
+    clauses, and a 10-digit factoring with residue facts ran 14% faster. But a number pinned by
+    its remainders (`bench/crt.rsat` and two variants) ran 1.0–2.0× slower (geometric mean
+    1.41×). With `x % 7 == 3`, the relational form lets the solver choose `q` and compute `x`;
+    the residue circuit turns it into a parity-like search over `x`'s bits, which CDCL handles
+    poorly. Requiring both forms to agree did not help either (1.19× slower).
 - **Two-level AIG rewriting.** Creating `a ∧ b` applies the local rules of Brummayer and
   Biere ("Local Two-Level And-Inverter Graph Minimization without Blowup", 2006):
   contradiction, idempotence, subsumption, substitution and resolution across two levels. CNF

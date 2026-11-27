@@ -1,0 +1,13 @@
+// Factoring a 10-digit semiprime with the 100-digit example's facts, residues included
+// (benchmark for remainders by constants).
+var n = 3677299193
+var root = isqrt(n)
+var x, y
+require x * y == n
+require is_odd(x) and is_odd(y)
+require x > 1 and x <= root and y > root
+require x >= 10 ^ 4
+for m in [3, 5, 7, 9, 10, 11, 13, 17, 19, 23] {
+    require x % m * (y % m) % m == n % m
+}
+solve x, y

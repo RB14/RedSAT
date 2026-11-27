@@ -17,7 +17,8 @@ mod repl;
 use clap::{Args, Parser, Subcommand};
 use redsat_lang::config::{find_config, load_config};
 use redsat_lang::{
-    Answer, AskFn, CompilerOptions, ExplicitTypes, OptionLayer, SourceFile, UnboundedInts,
+    Answer, AskFn, CompilerOptions, ExplicitTypes, Hooks, OptionLayer, SourceFile, TraceFn,
+    UnboundedInts,
 };
 use redsat_sat::{Cadical, Cdcl, SolveResult, Solver, dimacs};
 
@@ -45,6 +46,11 @@ struct Cli {
     /// Print per-solve statistics (domains, bit widths, circuit and CNF sizes, time) to stderr.
     #[arg(long)]
     stats: bool,
+
+    /// Report progress to stderr as it happens: files loaded, each solve's unknowns, search
+    /// space, circuit and CNF sizes, SAT calls and timings, and a summary of the run.
+    #[arg(short, long)]
+    verbose: bool,
 
     /// Pause after each solution: Enter shows the next one, `a` all of them, `q` stops.
     #[arg(long)]
@@ -126,21 +132,15 @@ fn parse<T: std::str::FromStr<Err = String>>(text: &str) -> Result<T, String> {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    let result = match cli.command {
+    let mut cli = Cli::parse();
+    let result = match cli.command.take() {
         Some(Command::Dimacs { path, solver }) => solve_dimacs(&path, &solver),
         Some(Command::Lsp { .. }) => redsat_lsp::run_stdio()
             .map(|()| ExitCode::SUCCESS)
             .map_err(|error| error.to_string().into()),
         Some(Command::Check { file, options }) => check(&file, &options),
         Some(Command::Repl { options, solver }) => repl(&options, &solver),
-        None => run(
-            &cli.file.expect("required by clap"),
-            &cli.options,
-            cli.stats,
-            cli.interactive,
-            &cli.solver,
-        ),
+        None => run(cli.file.as_deref().expect("required by clap"), &cli),
     };
     result.unwrap_or_else(|error| {
         eprintln!("error: {error}");
@@ -214,15 +214,9 @@ fn report(outcome: &redsat_lang::RunOutcome) {
     eprint!("{}", outcome.render_diagnostics());
 }
 
-fn run(
-    file: &Path,
-    args: &OptionArgs,
-    stats: bool,
-    interactive: bool,
-    solver: &str,
-) -> Result<ExitCode, Box<dyn Error>> {
-    let (source, options) = prepare(file, args)?;
-    let builtin = solver == "builtin";
+fn run(file: &Path, cli: &Cli) -> Result<ExitCode, Box<dyn Error>> {
+    let (source, options) = prepare(file, &cli.options)?;
+    let builtin = cli.solver == "builtin";
     let factory = move || -> Box<dyn Solver> {
         if builtin {
             Box::new(Cdcl::new())
@@ -245,11 +239,18 @@ fn run(
             },
         }
     };
-    let ask: Option<&AskFn> = if interactive { Some(&ask) } else { None };
-    let outcome = redsat_lang::run_with(&source, &options, &factory, &mut out, ask);
+    let trace = |line: &str| {
+        let _ = io::stdout().flush();
+        eprintln!("[redsat] {line}");
+    };
+    let hooks = Hooks {
+        ask: cli.interactive.then_some(&ask as &AskFn),
+        trace: cli.verbose.then_some(&trace as &TraceFn),
+    };
+    let outcome = redsat_lang::run_with(&source, &options, &factory, &mut out, hooks);
     out.flush()?;
     report(&outcome);
-    if stats {
+    if cli.stats {
         for solve_stats in &outcome.stats {
             eprint!("{}", solve_stats.render(&source));
         }

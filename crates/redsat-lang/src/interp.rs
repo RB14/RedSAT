@@ -17,7 +17,7 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::rc::Rc;
-use std::time::Instant;
+use web_time::Instant;
 
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
@@ -147,6 +147,7 @@ pub(crate) struct Interpreter<'a> {
     factory: &'a SolverFactory,
     out: &'a mut (dyn Write + Send),
     ask: Option<&'a AskFn>,
+    trace: Option<&'a crate::TraceFn>,
     store: TermStore,
     constraints: Vec<Constraint>,
     scopes: Vec<Scope>,
@@ -161,6 +162,7 @@ pub(crate) struct Interpreter<'a> {
     pub(crate) analysis: Option<AnalysisState>,
     pub(crate) warnings: Vec<Diagnostic>,
     pub(crate) stats: Vec<SolveStats>,
+    pub(crate) steps: crate::ExecSteps,
 }
 
 impl<'a> Interpreter<'a> {
@@ -170,7 +172,7 @@ impl<'a> Interpreter<'a> {
         types: &'a TypeInfo,
         factory: &'a SolverFactory,
         out: &'a mut (dyn Write + Send),
-        ask: Option<&'a AskFn>,
+        hooks: crate::Hooks<'a>,
     ) -> Self {
         Self {
             sources,
@@ -178,7 +180,8 @@ impl<'a> Interpreter<'a> {
             types,
             factory,
             out,
-            ask,
+            ask: hooks.ask,
+            trace: hooks.trace,
             store: TermStore::default(),
             constraints: Vec::new(),
             scopes: vec![Scope::default()],
@@ -190,6 +193,7 @@ impl<'a> Interpreter<'a> {
             analysis: None,
             warnings: Vec::new(),
             stats: Vec::new(),
+            steps: crate::ExecSteps::default(),
         }
     }
 
@@ -230,6 +234,7 @@ impl<'a> Interpreter<'a> {
                 return Err(Diagnostic::error(stmt.span, ANALYSIS_TIMEOUT));
             }
         }
+        self.steps.statements += 1;
         match &stmt.kind {
             StmtKind::Var(decl) => self.exec_var(decl)?,
             StmtKind::Assign { target, value } => self.exec_assign(target, value)?,
@@ -721,7 +726,17 @@ impl<'a> Interpreter<'a> {
             span,
             explain: solve.else_block.is_none(),
             ask: self.ask,
+            trace: self.trace,
         };
+        if let Some(trace) = self.trace {
+            let file = self.sources.file_at(span.start);
+            let (line, _) = file.line_col(span.start);
+            trace(&format!(
+                "solve #{} at {}:{line}",
+                self.stats.len() + 1,
+                file.name()
+            ));
+        }
         let body = solve.body.as_ref();
         let result = solve::solve(&store, &request, options, factory, &mut |model| {
             self.run_solution(model, &targets, body)
@@ -2307,6 +2322,8 @@ impl<'a> Interpreter<'a> {
             return Err(Diagnostic::error(span, format!("calls nested more than {MAX_CALL_DEPTH} deep"))
                 .with_note("functions are inlined, so recursion must stop based on values known at compile time"));
         }
+        self.steps.calls += 1;
+        self.steps.max_depth = self.steps.max_depth.max(self.frames.len() + 1);
         let saved = std::mem::replace(&mut self.scopes, vec![Scope::default()]);
         let result = self.run_function(decl, args, span);
         self.scopes = saved;

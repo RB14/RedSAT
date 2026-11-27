@@ -1,6 +1,8 @@
 //! Executing a `solve` statement: domains, circuit, SAT calls, decoding.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use web_time::Instant;
 
 use num_bigint::BigInt;
 use num_traits::One;
@@ -14,7 +16,7 @@ use crate::diagnostic::Diagnostic;
 use crate::domain::{self, Ext, Interval};
 use crate::ir::{Constant, Sort, Term, TermId, TermStore};
 use crate::source::{SourceFile, Span};
-use crate::{Answer, AskFn, SolverFactory};
+use crate::{Answer, AskFn, SolverFactory, TraceFn};
 
 /// A requirement accumulated by the program.
 #[derive(Clone, Debug)]
@@ -36,6 +38,8 @@ pub(crate) struct SolveRequest<'a> {
     pub explain: bool,
     /// Asked after each solution in interactive mode.
     pub ask: Option<&'a AskFn>,
+    /// Told about progress, for `--verbose`.
+    pub trace: Option<&'a TraceFn>,
 }
 
 /// How a `solve` ended.
@@ -75,7 +79,22 @@ pub struct SolveStats {
     pub solutions: u64,
     /// The magnitude limit used for unbounded unknowns, if any.
     pub magnitude_bits: Option<u32>,
-    /// Time spent inferring domains and building the circuit and CNF.
+    /// The solver's name.
+    pub solver: String,
+    /// Integer unknowns the solve depends on.
+    pub int_unknowns: usize,
+    /// Boolean unknowns the solve depends on.
+    pub bool_unknowns: usize,
+    /// Unknowns whose value domain inference fixed outright (they cost no search).
+    pub fixed_unknowns: usize,
+    /// Bits of the unknowns the solver has to decide: the search space has `2^decision_bits`
+    /// points.
+    pub decision_bits: usize,
+    /// Circuit inputs (decision bits plus helpers such as division quotients).
+    pub aig_inputs: usize,
+    /// Time spent inferring domains.
+    pub domains: Duration,
+    /// Time spent building the circuit and CNF.
     pub build: Duration,
     /// Time spent in SAT calls and decoding models.
     pub search: Duration,
@@ -116,6 +135,108 @@ impl SolveStats {
     }
 }
 
+/// Records the unknowns the solve depends on, with their final domains and widths.
+fn measure_unknowns(
+    stats: &mut SolveStats,
+    store: &TermStore,
+    relevant: &[usize],
+    domains: &[Interval],
+) {
+    let fixed = |index: usize| {
+        store.unknowns()[index].sort == Sort::Int
+            && domains[index].bounds().is_some_and(|(lo, hi)| lo == hi)
+    };
+    stats.unknowns = relevant
+        .iter()
+        .map(|&index| {
+            let unknown = &store.unknowns()[index];
+            let (domain, width) = match unknown.sort {
+                Sort::Bool => ("bool".to_string(), 1),
+                Sort::Int => {
+                    let domain = &domains[index];
+                    (domain.to_string(), blast::layout_of(domain).width)
+                }
+            };
+            (unknown.name.clone(), domain, width)
+        })
+        .collect();
+    stats.int_unknowns = relevant
+        .iter()
+        .filter(|&&index| store.unknowns()[index].sort == Sort::Int)
+        .count();
+    stats.bool_unknowns = relevant.len() - stats.int_unknowns;
+    stats.fixed_unknowns = relevant.iter().filter(|&&index| fixed(index)).count();
+    stats.decision_bits = stats
+        .unknowns
+        .iter()
+        .zip(relevant)
+        .filter(|(_, index)| !fixed(**index))
+        .map(|((_, _, width), _)| width)
+        .sum();
+}
+
+/// How many unknowns `--verbose` lists one by one.
+const TRACED_UNKNOWNS: usize = 8;
+
+fn trace_unknowns(
+    trace: &dyn Fn(String),
+    stats: &SolveStats,
+    unbounded: &[String],
+    magnitude: u32,
+) {
+    let unknowns = stats.int_unknowns + stats.bool_unknowns;
+    trace(format!(
+        "  unknowns   {unknowns} ({} integer, {} boolean), {} fixed by domain inference · domains in {:.2?}",
+        stats.int_unknowns, stats.bool_unknowns, stats.fixed_unknowns, stats.domains
+    ));
+    for (name, domain, width) in stats.unknowns.iter().take(TRACED_UNKNOWNS) {
+        trace(format!(
+            "             {name}: {domain} · {width} bit{}",
+            plural(*width)
+        ));
+    }
+    if unknowns > TRACED_UNKNOWNS {
+        trace(format!(
+            "             … and {} more",
+            unknowns - TRACED_UNKNOWNS
+        ));
+    }
+    if !unbounded.is_empty() {
+        trace(format!(
+            "             unbounded ({}) searched with |x| < 2^{magnitude}",
+            unbounded.join(", ")
+        ));
+    }
+    trace(format!(
+        "  space      {} decision bit{} → 2^{} candidate assignments",
+        stats.decision_bits,
+        plural(stats.decision_bits),
+        stats.decision_bits
+    ));
+}
+
+fn plural(count: usize) -> &'static str {
+    if count == 1 { "" } else { "s" }
+}
+
+fn describe_mode(request: &SolveRequest<'_>) -> String {
+    let mut mode = match request.mode {
+        SolveMode::First => "first",
+        SolveMode::All => "all",
+        SolveMode::Unique => "unique",
+    }
+    .to_string();
+    if let Some(limit) = request.limit {
+        mode += &format!(", limit {limit}");
+    }
+    match request.objective {
+        Some((Objective::Minimize, _)) => mode += ", minimize",
+        Some((Objective::Maximize, _)) => mode += ", maximize",
+        None => {}
+    }
+    mode
+}
+
 type Callback<'c> = dyn FnMut(&[Constant]) -> Result<(), Diagnostic> + 'c;
 
 /// Runs a `solve`: calls `on_solution` with the value of every term, once per reported solution.
@@ -131,10 +252,29 @@ pub(crate) fn solve(
         span: request.span,
         ..SolveStats::default()
     };
+    let trace = |line: String| {
+        if let Some(trace) = request.trace {
+            trace(&line);
+        }
+    };
+    trace(format!(
+        "  model      {} · {} requirement{} · {} IR terms",
+        describe_mode(request),
+        request.constraints.len(),
+        plural(request.constraints.len()),
+        store.len()
+    ));
     let mut warnings = Vec::new();
     let required: Vec<TermId> = request.constraints.iter().map(|c| c.term).collect();
 
-    let Some(ranges) = domain::propagate(store, &required) else {
+    let inferring = Instant::now();
+    let propagated = domain::propagate(store, &required);
+    stats.domains = inferring.elapsed();
+    let Some(ranges) = propagated else {
+        trace(format!(
+            "  domains    contradictory after {:.2?}: no solution",
+            stats.domains
+        ));
         let conflict = explain_if_cheap(store, request, options, factory, start);
         stats.elapsed = start.elapsed();
         return Ok((
@@ -163,6 +303,10 @@ pub(crate) fn solve(
             .map(|&u| store.unknowns()[u].name.clone())
             .collect();
         stats.magnitude_bits = (!unbounded.is_empty()).then_some(magnitude);
+        measure_unknowns(&mut stats, store, &relevant, &domains);
+        if request.trace.is_some() {
+            trace_unknowns(&trace, &stats, &names, magnitude);
+        }
 
         let building = Instant::now();
         let mut attempt = Attempt::build(
@@ -177,14 +321,40 @@ pub(crate) fn solve(
             .objective
             .map_or_else(Interval::full, |(_, term)| ranges[term.index()].clone());
         stats.build += building.elapsed();
+        trace(format!(
+            "  circuit    {} AND gates over {} inputs → CNF {} variables ({} auxiliary), {} clauses · built in {:.2?}",
+            attempt.cs.aig().num_ands(),
+            attempt.cs.aig().inputs().len(),
+            attempt.cs.solver().num_vars(),
+            (attempt.cs.solver().num_vars() as usize).saturating_sub(stats.decision_bits),
+            attempt.cs.solver().num_clauses(),
+            stats.build
+        ));
+        trace(format!("  search     with {}…", attempt.cs.solver().name()));
         let searching = Instant::now();
-        let outcome = attempt.run(request, &objective_range, on_solution)?;
+        let calls_before = stats.sat_calls;
+        let outcome = attempt.run(request, &objective_range, on_solution);
         stats.search += searching.elapsed();
-        attempt.record(&mut stats, store, &relevant, &domains);
+        attempt.record(&mut stats);
+        let outcome = outcome?;
+        trace(format!(
+            "  searched   {} SAT call{} · {} solution{} · {:.2?} (CNF grew to {} variables, {} clauses)",
+            stats.sat_calls - calls_before,
+            plural((stats.sat_calls - calls_before) as usize),
+            attempt.solutions,
+            plural(attempt.solutions as usize),
+            searching.elapsed(),
+            stats.cnf_vars,
+            stats.cnf_clauses
+        ));
         let can_deepen =
             !unbounded.is_empty() && magnitude.saturating_mul(2) <= options.max_int_bits;
         match outcome {
             SolveOutcome::NoSolution { .. } if can_deepen => {
+                trace(format!(
+                    "  deepening  no solution with |x| < 2^{magnitude} for the unbounded unknowns; retrying with 2^{}",
+                    magnitude * 2
+                ));
                 magnitude *= 2;
             }
             outcome => {
@@ -372,27 +542,9 @@ impl<'a> Attempt<'a> {
         }
     }
 
-    fn record(
-        &self,
-        stats: &mut SolveStats,
-        store: &TermStore,
-        relevant: &[usize],
-        domains: &[Interval],
-    ) {
-        stats.unknowns = relevant
-            .iter()
-            .map(|&index| {
-                let unknown = &store.unknowns()[index];
-                let (domain, width) = match unknown.sort {
-                    Sort::Bool => ("bool".to_string(), 1),
-                    Sort::Int => {
-                        let domain = &domains[index];
-                        (domain.to_string(), blast::layout_of(domain).width)
-                    }
-                };
-                (unknown.name.clone(), domain, width)
-            })
-            .collect();
+    fn record(&self, stats: &mut SolveStats) {
+        stats.aig_inputs = self.cs.aig().inputs().len();
+        stats.solver = self.cs.solver().name().to_string();
         stats.and_gates = self.cs.aig().num_ands();
         stats.cnf_vars = self.cs.solver().num_vars();
         stats.cnf_clauses = self.cs.solver().num_clauses();

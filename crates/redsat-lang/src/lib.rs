@@ -53,6 +53,19 @@ pub enum Answer {
 /// Asked after each solution in interactive mode, with the number of solutions shown so far.
 pub type AskFn = dyn Fn(u64) -> Answer + Sync;
 
+/// Told about the progress of a run, one line at a time, as with `redsat --verbose`.
+pub type TraceFn = dyn Fn(&str) + Sync;
+
+/// Optional callbacks for a run.
+#[derive(Clone, Copy, Default)]
+pub struct Hooks<'h> {
+    /// Asked after each solution whether to continue (interactive mode).
+    pub ask: Option<&'h AskFn>,
+    /// Told about progress: files loaded, each solve's model, circuit and search, and a
+    /// summary.
+    pub trace: Option<&'h TraceFn>,
+}
+
 /// The result of checking or running a program.
 #[derive(Debug)]
 pub struct RunOutcome {
@@ -62,6 +75,21 @@ pub struct RunOutcome {
     pub stats: Vec<SolveStats>,
     /// Every file of the program (main file, prelude, imports), to render diagnostics with.
     pub sources: SourceMap,
+    /// How long each phase took.
+    pub phases: Vec<(&'static str, std::time::Duration)>,
+    /// What elaboration did.
+    pub steps: ExecSteps,
+}
+
+/// Counters of the work the interpreter did while elaborating a program.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ExecSteps {
+    /// Statements executed (each loop iteration and inlined call counts its statements again).
+    pub statements: u64,
+    /// Function calls inlined.
+    pub calls: u64,
+    /// The deepest nesting of inlined calls.
+    pub max_depth: usize,
 }
 
 impl RunOutcome {
@@ -121,6 +149,8 @@ pub fn check(source: &SourceFile, options: &CompilerOptions) -> RunOutcome {
             diagnostics,
             stats: Vec::new(),
             sources,
+            phases: Vec::new(),
+            steps: ExecSteps::default(),
         }
     })
 }
@@ -133,19 +163,19 @@ pub fn run(
     factory: &SolverFactory,
     out: &mut (dyn Write + Send),
 ) -> RunOutcome {
-    run_with(source, options, factory, out, None)
+    run_with(source, options, factory, out, Hooks::default())
 }
 
-/// Like [`run`], but every `solve` asks `ask` after each solution whether to continue, as with
-/// `redsat --interactive`.
+/// Like [`run`], with [`Hooks`]: asking whether to continue after each solution (as with
+/// `redsat --interactive`) and reporting progress (as with `redsat --verbose`).
 pub fn run_with(
     source: &SourceFile,
     options: &CompilerOptions,
     factory: &SolverFactory,
     out: &mut (dyn Write + Send),
-    ask: Option<&AskFn>,
+    hooks: Hooks<'_>,
 ) -> RunOutcome {
-    with_large_stack(|| run_here(source, options, factory, out, ask))
+    with_large_stack(|| run_here(source, options, factory, out, hooks))
 }
 
 fn run_here(
@@ -153,9 +183,24 @@ fn run_here(
     options: &CompilerOptions,
     factory: &SolverFactory,
     out: &mut (dyn Write + Send),
-    ask: Option<&AskFn>,
+    hooks: Hooks<'_>,
 ) -> RunOutcome {
+    let trace = |line: String| {
+        if let Some(trace) = hooks.trace {
+            trace(&line);
+        }
+    };
+    let started = web_time::Instant::now();
     let (sources, checked) = front_end(source, options);
+    let mut phases = vec![("parse, load imports and type-check", started.elapsed())];
+    let files: Vec<&str> = sources.files().iter().map(SourceFile::name).collect();
+    trace(format!(
+        "loaded {} file{} ({}) · parsed and checked in {:.2?}",
+        files.len(),
+        if files.len() == 1 { "" } else { "s" },
+        files.join(", "),
+        phases[0].1
+    ));
     let (program, types, mut diagnostics) = match checked {
         Ok(checked) => checked,
         Err(diagnostics) => {
@@ -163,11 +208,38 @@ fn run_here(
                 diagnostics,
                 stats: Vec::new(),
                 sources,
+                phases,
+                steps: ExecSteps::default(),
             };
         }
     };
-    let mut interpreter = Interpreter::new(&sources, options, &types, factory, out, ask);
+    let running = web_time::Instant::now();
+    let mut interpreter = Interpreter::new(&sources, options, &types, factory, out, hooks);
     let result = interpreter.run(&program);
+    phases.push(("elaborate and solve", running.elapsed()));
+    let steps = interpreter.steps;
+    let solving: std::time::Duration = interpreter.stats.iter().map(|s| s.elapsed).sum();
+    let calls = match steps.calls {
+        0 => "no calls inlined".to_string(),
+        1 => "1 call inlined".to_string(),
+        n => format!(
+            "{n} calls inlined (nested at most {} deep)",
+            steps.max_depth
+        ),
+    };
+    trace(format!(
+        "finished in {:.2?}: {} statement{} executed, {calls}, {} solve{} taking {:.2?}",
+        started.elapsed(),
+        steps.statements,
+        if steps.statements == 1 { "" } else { "s" },
+        interpreter.stats.len(),
+        if interpreter.stats.len() == 1 {
+            ""
+        } else {
+            "s"
+        },
+        solving
+    ));
     diagnostics.append(&mut interpreter.warnings);
     if let Err(error) = result {
         diagnostics.push(error);
@@ -178,6 +250,8 @@ fn run_here(
         diagnostics,
         stats,
         sources,
+        phases,
+        steps,
     }
 }
 
@@ -243,8 +317,14 @@ pub fn analyze(
         }
         let factory = || -> Box<dyn Solver> { unreachable!("analysis never solves") };
         let mut sink = std::io::sink();
-        let mut interpreter =
-            Interpreter::new(&sources, options, &types, &factory, &mut sink, None);
+        let mut interpreter = Interpreter::new(
+            &sources,
+            options,
+            &types,
+            &factory,
+            &mut sink,
+            Hooks::default(),
+        );
         interpreter.analysis = Some(interp::AnalysisState::new(budget));
         let result = interpreter.run(&program);
         diagnostics.append(&mut interpreter.warnings);

@@ -217,3 +217,18 @@ The test suite includes:
 - checks that the editor grammars, the guide and the compiler agree on the language's
   vocabulary;
 - an end-to-end test of the language server.
+
+## License
+
+RedSAT is dual-licensed under either of
+
+- the [MIT License](LICENSE-MIT), or
+- the [Apache License, Version 2.0](LICENSE-APACHE),
+
+at your option. The web playground also ships builds of [CaDiCaL](https://github.com/arminbiere/cadical)
+and [MiniSat](https://github.com/niklasso/minisat), both under the MIT License (their licences are
+published next to the modules).
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in
+RedSAT by you, as defined in the Apache-2.0 license, shall be dual-licensed as above, without any
+additional terms or conditions.

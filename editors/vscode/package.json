@@ -5,6 +5,7 @@
   "version": "0.3.0",
   "publisher": "redsat",
   "private": true,
+  "license": "MIT OR Apache-2.0",
   "engines": {
     "vscode": "^1.91.0"
   },

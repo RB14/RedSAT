@@ -2,6 +2,8 @@
 name = "redsat-circuit"
 description = "Circuit layer of RedSAT: And-Inverter Graphs, CNF encoding and exact bit-vector arithmetic"
 version.workspace = true
+license.workspace = true
+repository.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true

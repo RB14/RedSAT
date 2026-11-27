@@ -2,6 +2,8 @@
 name = "redsat-wasm"
 description = "RedSAT compiled to WebAssembly (the compiler and the built-in solver), for the web playground"
 version.workspace = true
+license.workspace = true
+repository.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true

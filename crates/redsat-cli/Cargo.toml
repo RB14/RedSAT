@@ -1,0 +1,18 @@
+[package]
+name = "redsat-cli"
+description = "The redsat command-line tool"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "redsat"
+path = "src/main.rs"
+
+[dependencies]
+redsat-sat = { workspace = true, features = ["cadical"] }
+clap.workspace = true
+
+[lints]
+workspace = true

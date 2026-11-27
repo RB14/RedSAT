@@ -1,0 +1,19 @@
+[package]
+name = "redsat-sat"
+description = "Boolean layer of RedSAT: literals, CNF formulas, DIMACS I/O and SAT solver backends"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+default = ["cadical"]
+## The CaDiCaL backend (builds the vendored C++ solver; needs a C++ compiler and libclang).
+cadical = ["dep:rustsat", "dep:rustsat-cadical"]
+
+[dependencies]
+rustsat = { workspace = true, optional = true }
+rustsat-cadical = { workspace = true, optional = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "redsat-circuit"
+description = "Circuit layer of RedSAT: And-Inverter Graphs, CNF encoding and exact bit-vector arithmetic"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+redsat-sat.workspace = true
+num-bigint.workspace = true
+
+[dev-dependencies]
+redsat-sat = { workspace = true, features = ["cadical"] }
+
+[lints]
+workspace = true

@@ -620,6 +620,12 @@ On top of that:
   Disabling CaDiCaL's variable elimination rescued one case and not another, so the cause is
   still open. A 1000× regression on a whole class of problems outweighs an average gain.
   Multiplexers alone (without XOR) changed nothing measurable.
+  - *Estimated and not built: a portfolio that solves both encodings.* The two encodings win
+    on different instances, so half the threads could solve each. Measured at equal thread
+    counts, as min(gate encoding on 2 threads, XOR on 2 threads) against the gate encoding on 4
+    threads, it was 16% faster on 12 semiprimes. But it lost elsewhere: Pell with `d = 6` went
+    from 1.63 s to 8.23 s, because the gate encoding with 2 threads is much less lucky than with
+    4. Over 21 programs it came to about 0.97: not worth splitting the portfolio.
 
 ### 5.4 Bit-vector gadgets
 

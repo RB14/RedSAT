@@ -4,6 +4,7 @@ import { RACE, SOLVERS, solverById } from './backends.js';
 import { Compiler } from './compiler.js';
 import { createEditor } from './editor.js';
 import { renderHome } from './home.js';
+import { setupSwitcher } from './switcher.js';
 import { markOutput, setupMobile, showTab } from './mobile.js';
 import { lexicon } from './rsat-language.js';
 import { decodeShare, encodeShare } from './share.js';
@@ -457,7 +458,9 @@ function setupOptions() {
     });
   }
   const select = $('solver');
-  select.replaceChildren(...[...SOLVERS, RACE].map((solver) => new Option(`${solver.label} (${solver.detail})`, solver.id)));
+  select.replaceChildren(
+    ...[...SOLVERS, RACE].map((solver) => Object.assign(new Option(solver.label, solver.id), { title: solver.detail })),
+  );
   select.value = store.settings.solver === RACE.id ? RACE.id : solverById(store.settings.solver).id;
   select.addEventListener('change', () => {
     store.settings.solver = select.value;
@@ -494,7 +497,17 @@ async function start() {
   for (const button of document.querySelectorAll('.stop-button')) button.addEventListener('click', stopProgram);
   $('share').addEventListener('click', share);
   $('new-file').addEventListener('click', newFile);
-  $('file-button').addEventListener('click', () => showView(document.body.dataset.view === 'home' ? 'editor' : 'home'));
+  setupSwitcher({
+    button: $('file-button'),
+    panel: $('switcher'),
+    state: () => ({ files: store.files, examples, current: doc && { kind: doc.kind, id: doc.id } }),
+    actions: {
+      newFile,
+      openFile: (id) => open(fileDoc(store.file(id))),
+      openExample: (name) => open(exampleDoc(exampleNamed(name))),
+      browse: () => showView('home'),
+    },
+  });
   $('brand').addEventListener('click', (event) => {
     event.preventDefault();
     showView('home');

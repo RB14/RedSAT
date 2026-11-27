@@ -98,6 +98,7 @@ pub fn vocabulary() -> String {
 /// # Errors
 /// When `config` is not a valid configuration.
 #[wasm_bindgen]
+#[allow(clippy::too_many_arguments)] // a flat function is the simplest JavaScript API
 pub fn run(
     name: &str,
     source: &str,

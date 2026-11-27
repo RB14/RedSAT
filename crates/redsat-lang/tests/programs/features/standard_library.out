@@ -7,7 +7,7 @@ true false true [1, 2, 3] true
 true true false true Q q 8
 true true 3 [1, 2, 3]
 n = 1234
-w = "abyaba"
+w = "abqaba"
 xs = [7, 2, 5]
-xs = [7, 5, 2]
 xs = [5, 7, 2]
+xs = [7, 5, 2]

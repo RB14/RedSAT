@@ -64,6 +64,22 @@ impl Blasted {
 /// count stays a binary sum.
 const TOTALIZER_BUDGET: usize = 200_000;
 
+/// The value of a comparison that the operands' ranges decide on their own (e.g. `x >= 0` when
+/// `x` lies in `0..=35`): such requirements then cost no clauses, and comparisons inside
+/// larger expressions fold away.
+fn decided_by_ranges(term: &Term, a: &Interval, b: &Interval) -> Option<bool> {
+    let ((a_lo, a_hi), (b_lo, b_hi)) = (a.bounds()?, b.bounds()?);
+    match term {
+        Term::Lt(..) if a_hi < b_lo => Some(true),
+        Term::Lt(..) if a_lo >= b_hi => Some(false),
+        Term::Le(..) if a_hi <= b_lo => Some(true),
+        Term::Le(..) if a_lo > b_hi => Some(false),
+        Term::Eq(..) if a_hi < b_lo || b_hi < a_lo => Some(false),
+        Term::Eq(..) if a_lo == a_hi && b_lo == b_hi && a_lo == b_lo => Some(true),
+        _ => None,
+    }
+}
+
 /// The smallest layout for a bounded range.
 pub(crate) fn layout_of(range: &Interval) -> Layout {
     let (lo, hi) = range.bounds().expect("sizes of blasted terms are bounded");
@@ -207,6 +223,9 @@ impl Blaster<'_> {
             }
             Term::AllDifferent(items) => Bits::Bool(self.all_different(items)),
             Term::Eq(a, b) | Term::Lt(a, b) | Term::Le(a, b) => {
+                if let Some(decided) = decided_by_ranges(term, &self.sizes[a.index()], &self.sizes[b.index()]) {
+                    return Bits::Bool(if decided { Edge::TRUE } else { Edge::FALSE });
+                }
                 if let Some(edge) = self.cardinality(term) {
                     return Bits::Bool(edge);
                 }

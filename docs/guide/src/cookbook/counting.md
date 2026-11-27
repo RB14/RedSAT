@@ -89,13 +89,13 @@ solve all w
 ```
 
 ```text
-w = "abab"
-w = "abac"
-w = "caca"
-w = "caba"
 w = "baba"
+w = "caba"
 w = "acac"
+w = "abac"
+w = "abab"
 w = "acab"
+w = "caca"
 w = "baca"
 w = "abca"
 w = "acba"

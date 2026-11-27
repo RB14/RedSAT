@@ -18,7 +18,7 @@
   const CONTEXTUAL_KEYWORDS = `all unique limit minimize maximize bound`;
   const BUILTIN_TYPES = `bool int uint char string`;
   const BUILTIN_FUNCTIONS = `
-    abs min max len sum count all any all_different reverse ord chr
+    abs isqrt min max len sum count all any all_different reverse ord chr
   `;
   const PRELUDE_FUNCTIONS = `
     sign clamp divides is_even is_odd gcd digits digit_sum bit popcount

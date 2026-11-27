@@ -6,6 +6,7 @@ top of them, the [standard library](standard-library.md) adds many more, written
 | Function                  | Result   | Meaning                                                   |
 |---------------------------|----------|-----------------------------------------------------------|
 | `abs(x)`                  | `int`    | the absolute value of `x`                                 |
+| `isqrt(n)`                | `int`    | √n rounded down: the largest `r` with `r * r <= n`        |
 | `min(a, b, …)`, `min(xs)` | `int`    | the smallest of the arguments, or of the elements of `xs` |
 | `max(a, b, …)`, `max(xs)` | `int`    | the largest of the arguments, or of the elements of `xs`  |
 | `len(xs)`                 | `int`    | the length of an array or a string                        |
@@ -20,6 +21,7 @@ top of them, the [standard library](standard-library.md) adds many more, written
 
 ```rsat
 print abs(-7), abs(7)
+print isqrt(10), isqrt(16), isqrt(10 ^ 100) == 10 ^ 50
 print min(3, 1, 2), max(3, 1, 2), min([5, 9]), max(x % 7 for x in 10..20)
 print len([1, 2, 3]), len("hello"), len([[1], [2, 3]])
 print sum([1, 2, 3]), sum(x for x in 1..=100 if x % 3 == 0), sum([])
@@ -32,6 +34,7 @@ print ord('A'), chr(97), chr(ord('a') + 25)
 
 ```text
 7 7
+3 4 true
 1 3 5 6
 3 5 2
 6 1683 0
@@ -40,6 +43,24 @@ true true false false
 true false
 [3, 2, 1] desserts
 65 a z
+```
+
+## Integer square root
+
+`isqrt(n)` is √n rounded down; `n` must not be negative. With a known `n`, it is computed exactly
+while the program compiles, however large `n` is, so it costs the solver nothing: use it to
+bound a search, such as the smaller factor of a number (`require x <= isqrt(n)`). With an
+unknown `n`, the result is an unknown that the solver keeps equal to √n rounded down, and `n`
+is required not to be negative:
+
+```rsat
+var n: int[0..=100]
+require isqrt(n) == 5 and n % 2 == 0
+solve n maximize n
+```
+
+```text
+n = 34
 ```
 
 ## Aggregates and comprehensions

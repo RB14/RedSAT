@@ -1,0 +1,3 @@
+// A known negative number has no integer square root.
+var x = 3 - 7
+print isqrt(x)

@@ -1,0 +1,24 @@
+// isqrt: on known values (computed while compiling, however large) and on unknowns.
+print isqrt(0), isqrt(1), isqrt(15), isqrt(16), isqrt(17)
+print isqrt(10 ^ 100) == 10 ^ 50, isqrt(10 ^ 101)
+
+// The numbers whose root is 3.
+var n: int[0..=50]
+require isqrt(n) == 3
+solve all n
+
+// Perfect squares, with an unbounded unknown: range inference bounds the root.
+var s, r
+require s > 1 and s < 200
+require r == isqrt(s) and r * r == s and r % 4 == 0
+solve all s, r
+
+// Under a condition on an unknown, `n >= 0` is only required where the branch is taken.
+var b: bool
+var m: int[-5..=5]
+var root = 0
+if b {
+    root = isqrt(m)
+}
+require m < -3 or root == 2
+solve all b, m, root

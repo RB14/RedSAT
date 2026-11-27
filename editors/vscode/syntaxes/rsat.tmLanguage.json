@@ -378,7 +378,7 @@
     "builtin-functions": {
       "comment": "Built-in functions, highlighted only when immediately followed by `(`.",
       "name": "support.function.builtin.rsat",
-      "match": "\\b(all_different_except|all_different|sign|clamp|divides|is_even|is_odd|gcd|digits|digit_sum|bit|popcount|exactly|at_least|at_most|count_of|product|all_equal|increasing|strictly_increasing|decreasing|strictly_decreasing|index_of|lex_less|lex_less_eq|sorted|is_permutation|is_digit|is_lower|is_upper|is_letter|to_upper|to_lower|digit_value|starts_with|ends_with|count_char|abs|min|max|len|sum|count|all|any|reverse|ord|chr)\\b(?=\\()"
+      "match": "\\b(all_different_except|all_different|sign|clamp|divides|is_even|is_odd|gcd|digits|digit_sum|bit|popcount|exactly|at_least|at_most|count_of|product|all_equal|increasing|strictly_increasing|decreasing|strictly_decreasing|index_of|lex_less|lex_less_eq|sorted|is_permutation|is_digit|is_lower|is_upper|is_letter|to_upper|to_lower|digit_value|starts_with|ends_with|count_char|abs|isqrt|min|max|len|sum|count|all|any|reverse|ord|chr)\\b(?=\\()"
     },
     "function-calls": {
       "name": "entity.name.function.call.rsat",

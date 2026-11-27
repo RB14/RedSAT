@@ -38,7 +38,7 @@ of a `.rsat` editor), which also offers a restart. The command palette has
   `maximize`;
 - built-in types `bool int uint char string`, including `int[0..=9]`, `int<32>`, `uint<8>`
   and array types such as `[[int[1..=9]; 9]; 9]`;
-- built-in functions (`abs min max len sum count all any all_different reverse`) and other
+- built-in functions (`abs isqrt min max len sum count all any all_different reverse`) and other
   function calls, function definitions with their parameters, and the names declared by
   `var` and bound by `for … in`;
 - decimal, hex (`0xFF_FF`) and binary (`0b1010`) numbers; `'c'` character literals;

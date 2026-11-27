@@ -289,7 +289,7 @@ abcd [1, 2, 3]
 
 ## Built-in functions
 
-A handful of functions are built into the language: `abs`, `min`, `max`, `len`, `sum`,
+A handful of functions are built into the language: `abs`, `isqrt`, `min`, `max`, `len`, `sum`,
 `count`, `all`, `any`, `all_different`, `reverse`, `ord` and `chr`. On top of them, a
 [standard library](../reference/standard-library.md) written in RedSAT itself adds
 `exactly`, `sorted`, `lex_less`, `is_digit` and many more. All of them work on unknowns. The

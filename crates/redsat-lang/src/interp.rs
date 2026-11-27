@@ -2262,6 +2262,43 @@ impl<'a> Interpreter<'a> {
         Ok(Value::Struct(id, Rc::new(fields)))
     }
 
+    /// `isqrt(n)` for an unknown `n`: a new unknown `r ≥ 0` defined by `r² ≤ m < (r + 1)²`,
+    /// where `m = max(n, 0)`, and the requirement `n ≥ 0`.
+    ///
+    /// Every `n` has exactly one such `r`, so the definition never excludes a solution and holds
+    /// unconditionally; only `n ≥ 0` is subject to the current condition (inside an `if` on an
+    /// unknown, it applies where the branch is taken). Unconditional, the definition lets range
+    /// inference bound `r` from `n`'s range through the squares.
+    fn symbolic_isqrt(&mut self, n: &Value, span: Span) -> Value {
+        let n = self.int_term(n);
+        let (line, column) = self.sources.file_at(span.start).line_col(span.start);
+        let root = self.store.new_unknown(
+            format!("isqrt@{line}:{column}"),
+            Sort::Int,
+            Interval::at_least(BigInt::zero()),
+            span,
+        );
+        let (zero, one) = (
+            self.store.int(BigInt::zero()),
+            self.store.int(BigInt::one()),
+        );
+        let negative = self.store.lt(n, zero);
+        let radicand = self.store.ite(negative, zero, n);
+        let square = self.store.mul(root, root);
+        let next = self.store.add(root, one);
+        let next_square = self.store.mul(next, next);
+        let at_most = self.store.le(square, radicand);
+        let below_next = self.store.lt(radicand, next_square);
+        let definition = self.store.and(at_most, below_next);
+        self.constraints.push(Constraint {
+            term: definition,
+            span,
+        });
+        let natural = self.store.le(zero, n);
+        self.add_constraint(natural, span);
+        Value::Sym(root, Tag::Int)
+    }
+
     fn builtin(&mut self, name: &str, mut values: Vec<Value>, span: Span) -> Result<Value> {
         Ok(match (name, values.len()) {
             ("abs", _) => match values.pop().expect("one argument") {
@@ -2274,6 +2311,16 @@ impl<'a> Interpreter<'a> {
                     let term = self.store.ite(negative, negated, t);
                     self.int_value(term)
                 }
+            },
+            ("isqrt", _) => match values.pop().expect("one argument") {
+                Value::Int(n) if n.is_negative() => {
+                    return Err(Diagnostic::error(
+                        span,
+                        format!("isqrt({n}): a negative number has no square root"),
+                    ));
+                }
+                Value::Int(n) => Value::Int(n.sqrt()),
+                other => self.symbolic_isqrt(&other, span),
             },
             ("ord", _) => match values.pop().expect("one argument") {
                 Value::Char(c) => Value::Int(BigInt::from(c)),

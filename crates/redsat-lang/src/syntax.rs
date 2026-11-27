@@ -20,6 +20,7 @@ pub const BUILTIN_TYPES: &[&str] = &["bool", "int", "uint", "char", "string"];
 /// Names of the built-in functions.
 pub const BUILTIN_FUNCTIONS: &[&str] = &[
     "abs",
+    "isqrt",
     "min",
     "max",
     "len",
@@ -85,6 +86,9 @@ pub fn builtin_doc(name: &str) -> Option<&'static str> {
              Works on unknowns too: `require abs(x - y) == 3` holds when `x` and `y` are three \
              apart, in either order.\n\n\
              Example: `abs(-7)` is `7`."
+        }
+        "isqrt" => {
+            "isqrt(n): the integer square root of `n`: the largest `r` with `r * r <= n`, that              is √n rounded down. `n` must not be negative.\n\n             - With a known `n`, it is computed exactly when the program is compiled, at no cost              to the solver, however large `n` is (`isqrt(10 ^ 100)` is `10 ^ 50`).\n             - With an unknown `n`, the result is an unknown `r` that the solver keeps equal to              √n rounded down (`r * r <= n < (r + 1) * (r + 1)`), and `n` is required not to be              negative.\n\n             Typical uses: bounding a search (`require x <= isqrt(n)`: the smaller of two              factors of `n`), and perfect squares (`isqrt(n) * isqrt(n) == n`).\n\n             Example: `isqrt(10)` is `3`, `isqrt(16)` is `4`."
         }
         "min" => {
             "min(a, b, …) or min(xs): the smallest value.\n\n\

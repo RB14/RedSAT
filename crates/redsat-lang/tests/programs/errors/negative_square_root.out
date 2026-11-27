@@ -1,0 +1,5 @@
+error: isqrt(-4): a negative number has no square root
+ --> negative_square_root.rsat:3:7
+  |
+3 | print isqrt(x)
+  |       ^^^^^^^^

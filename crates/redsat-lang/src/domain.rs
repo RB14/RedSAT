@@ -101,6 +101,15 @@ impl Interval {
         Self::new(value.clone(), value)
     }
 
+    /// `lo..`: every integer from `lo` up.
+    #[must_use]
+    pub fn at_least(lo: BigInt) -> Self {
+        Self {
+            lo: Ext::Fin(lo),
+            hi: Ext::PosInf,
+        }
+    }
+
     /// Whether the interval contains no integer.
     #[must_use]
     pub fn is_empty(&self) -> bool {

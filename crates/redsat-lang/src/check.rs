@@ -1243,7 +1243,9 @@ impl Checker<'_> {
             return ret;
         }
         match name.name.as_str() {
-            "abs" if args.len() == 1 => self.unify(&Ty::Int, &arg_tys[0], args[0].value.span),
+            "abs" | "isqrt" if args.len() == 1 => {
+                self.unify(&Ty::Int, &arg_tys[0], args[0].value.span)
+            }
             "ord" if args.len() == 1 => {
                 self.unify(&Ty::Char, &arg_tys[0], args[0].value.span);
                 Ty::Int

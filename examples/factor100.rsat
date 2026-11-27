@@ -12,18 +12,7 @@
 
 var n = 3038196057505930010811710076216320581288302278916974776247936251001157989818867007989370067644240363
 
-/// The largest `r` with `r * r <= n`, for a known `n` (Newton's method).
-fn isqrt(n: int) -> int {
-    var r = n
-    var next = (r + 1) / 2
-    while next < r {
-        r = next
-        next = (r + n / r) / 2
-    }
-    return r
-}
-
-var root = isqrt(n)
+var root = isqrt(n)             // √n rounded down, computed while compiling (n is known)
 var x, y
 
 // 1. n has two factors.

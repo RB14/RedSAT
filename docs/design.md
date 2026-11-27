@@ -378,6 +378,7 @@ string has exactly one representation and string equality is position-wise equal
 | Function | Meaning |
 |---|---|
 | `abs(x)`, `min(a, b, …)`, `max(a, b, …)` | the usual, on integers |
+| `isqrt(n)` | √n rounded down; computed while compiling for a known `n`, else a new unknown `r` with `r² ≤ n < (r + 1)²` |
 | `len(xs)` | length of an array or string |
 | `sum(xs)`, `count(bs)` | the sum of integers; the number of `true` values |
 | `all(bs)`, `any(bs)` | every / some value is `true` |

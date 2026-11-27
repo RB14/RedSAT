@@ -608,6 +608,18 @@ On top of that:
 - **Decoding.** Models are decoded by reading the circuit *inputs* and re-evaluating the AIG.
   The values of internal gate variables are not trusted, since with one-sided encodings they
   need not match their gate's function.
+- **Measured and rejected: encoding XOR and multiplexers directly** (Eén, Mishchenko and
+  Sörensson, SAT 2007). An AIG spells `a ⊕ b`, and `c ? t : e`, with three AND gates. Encoded
+  as one gate each, with four clauses (plus a redundant one per direction for multiplexers),
+  the CNF shrank by 16–42% in clauses and 23–62% in variables (Sudoku, Golomb rulers and
+  factoring). Nearly all of that came from XORs, which make up most of an adder. Solving was
+  faster on average: the benchmark suite's geometric mean was 0.87, and 0.78 on 12 random
+  semiprimes. But it failed on squaring problems. Pell's equation `x² − d·y² = 1` (with
+  `solve all … limit 2` on unbounded integers) was solved in 6 of 10 formulations by the gate
+  encoding (`d = 2` in 0.03 s) and in none of them, within 20 s, by the XOR encoding.
+  Disabling CaDiCaL's variable elimination rescued one case and not another, so the cause is
+  still open. A 1000× regression on a whole class of problems outweighs an average gain.
+  Multiplexers alone (without XOR) changed nothing measurable.
 
 ### 5.4 Bit-vector gadgets
 

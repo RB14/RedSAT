@@ -197,6 +197,75 @@ function clearOutput() {
   output.dropped = 0;
 }
 
+// --- races ----------------------------------------------------------------------------------
+//
+// A race runs the program on several solvers at once. Each member's output (and verbose trace)
+// is kept, and a row of chips above the output shows one member's at a time: the first while
+// the race runs, then the winner. What the run prints after the race (diagnostics, notes)
+// belongs to the member shown.
+
+/** {members: [{solver, buffer, state}], selected, replaying}, while a race is shown. */
+let raceView = null;
+
+function startRaceView(members) {
+  raceView = { members: members.map((solver) => ({ solver, buffer: [], state: 'running' })), selected: 0, replaying: false };
+  renderRaceBar();
+}
+
+function endRaceView() {
+  raceView = null;
+  renderRaceBar();
+}
+
+const RACE_STATES = { running: 'running', won: 'won the race', stopped: 'stopped', failed: 'failed' };
+
+function renderRaceBar() {
+  const bar = $('race-bar');
+  bar.hidden = !raceView;
+  if (!raceView) {
+    bar.replaceChildren();
+    return;
+  }
+  bar.replaceChildren(
+    ...raceView.members.map((member, index) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'race-chip';
+      chip.dataset.state = member.state;
+      chip.setAttribute('role', 'tab');
+      chip.setAttribute('aria-selected', String(index === raceView.selected));
+      chip.title = `${member.solver.label}: ${RACE_STATES[member.state]}`;
+      chip.textContent = member.state === 'won' ? `${member.solver.label} 🏆` : member.solver.label;
+      chip.addEventListener('click', () => showRaceMember(index));
+      return chip;
+    }),
+  );
+}
+
+/** Shows member `index`'s output so far (and from now on, as it arrives). */
+function showRaceMember(index) {
+  if (!raceView) return;
+  raceView.selected = index;
+  clearOutput();
+  raceView.replaying = true;
+  for (const [kind, text] of raceView.members[index].buffer) emit(kind, text);
+  raceView.replaying = false;
+  renderRaceBar();
+}
+
+/** Output of race member `index`: kept, and shown if it is the member on display. */
+function raceOutput(index, kind, text) {
+  if (!raceView) return;
+  raceView.members[index].buffer.push([kind, text]);
+  if (raceView.selected === index) emit(kind, text);
+}
+
+function setRaceState(index, state) {
+  if (!raceView) return;
+  raceView.members[index].state = state;
+  renderRaceBar();
+}
+
 function placeholder() {
   const div = document.createElement('div');
   div.className = 'placeholder';
@@ -210,6 +279,9 @@ function placeholder() {
 }
 
 function emit(kind, text) {
+  // During a race, what is printed for the member on display is also kept with it (replays and
+  // members' own output are already kept).
+  if (raceView && !raceView.replaying && !raceView.capturing) raceView.members[raceView.selected].buffer.push([kind, text]);
   output.queue.push([kind, text]);
   markOutput();
   if (!output.scheduled) {
@@ -307,32 +379,46 @@ function setRunning(value) {
  */
 function race(request) {
   const members = raceMembers();
+  startRaceView(members);
+  // Members' own output is recorded by raceOutput, not again by emit.
+  const live = (index, kind, text) => {
+    raceView.capturing = true;
+    raceOutput(index, kind, text);
+    raceView.capturing = false;
+  };
   return new Promise((resolve, reject) => {
     let settled = false;
     const failures = [];
     members.forEach((solver, index) => {
-      const output = [];
       runner(index)
         .request(
           { ...request, solver: solver.id, options: solver.options },
           {
-            onOutput: (text) => output.push(['out', text]),
-            onTrace: (text) => output.push(['trace', `${text}\n`]),
+            onOutput: (text) => live(index, 'out', text),
+            onTrace: (text) => live(index, 'trace', `${text}\n`),
           },
         )
         .then(({ result }) => {
           if (settled) return;
           settled = true;
-          members.forEach((_, other) => other !== index && runner(other).stop());
-          for (const [kind, text] of output) emit(kind, text);
+          members.forEach((_, other) => {
+            if (other === index) return;
+            runner(other).stop();
+            if (raceView?.members[other].state === 'running') setRaceState(other, 'stopped');
+          });
+          setRaceState(index, 'won');
+          showRaceMember(index);
           resolve({ result, solver });
         })
         .catch((error) => {
+          const stopped = error.message === 'stopped';
+          if (!stopped) live(index, 'crash', `${error.message}\n`);
+          setRaceState(index, stopped ? 'stopped' : 'failed');
           if (settled) return;
           failures.push(error);
           if (failures.length === members.length) {
             settled = true;
-            reject(failures[0]);
+            reject(failures.find((failure) => failure.message !== 'stopped') ?? failures[0]);
           }
         });
     });
@@ -341,6 +427,7 @@ function race(request) {
 
 async function runProgram() {
   if (running || !editor || !doc) return;
+  endRaceView();
   clearOutput();
   $('stats').textContent = '';
   setRunning(true);

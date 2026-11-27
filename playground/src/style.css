@@ -503,6 +503,67 @@ body.dragging .divider {
 
 /* --- output ------------------------------------------------------------------------------- */
 
+/* The members of a race, one chip each; the selected one's output is shown below. */
+.race-bar {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.race-bar[hidden] {
+  display: none;
+}
+
+.race-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.race-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.race-chip::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.race-chip[aria-selected='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.race-chip[data-state='running']::before {
+  background: var(--accent);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.race-chip[data-state='won']::before {
+  background: var(--ok);
+}
+
+.race-chip[data-state='failed']::before {
+  background: var(--warn);
+}
+
 .output {
   flex: 1;
   min-height: 0;

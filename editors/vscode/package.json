@@ -1,0 +1,60 @@
+{
+  "name": "redsat",
+  "displayName": "RedSAT",
+  "description": "Syntax highlighting, editor configuration and snippets for the RedSAT language (.rsat).",
+  "version": "0.1.0",
+  "publisher": "redsat",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "keywords": [
+    "redsat",
+    "rsat",
+    "sat",
+    "constraint",
+    "solver"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "rsat",
+        "aliases": [
+          "RedSAT",
+          "rsat"
+        ],
+        "extensions": [
+          ".rsat"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "rsat",
+        "scopeName": "source.rsat",
+        "path": "./syntaxes/rsat.tmLanguage.json"
+      },
+      {
+        "scopeName": "markdown.rsat.codeblock",
+        "path": "./syntaxes/rsat.markdown.tmLanguage.json",
+        "injectTo": [
+          "text.html.markdown"
+        ],
+        "embeddedLanguages": {
+          "meta.embedded.block.rsat": "rsat"
+        }
+      }
+    ],
+    "snippets": [
+      {
+        "language": "rsat",
+        "path": "./snippets/rsat.json"
+      }
+    ]
+  }
+}

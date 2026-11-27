@@ -275,8 +275,8 @@ impl Lexer<'_> {
     fn number(&mut self) -> Result<(), Diagnostic> {
         let start = self.pos;
         let (radix, digits_start) = match (self.bytes[start], self.peek(1)) {
-            (b'0', Some(b'x' | b'X')) => (16, start + 2),
-            (b'0', Some(b'b' | b'B')) => (2, start + 2),
+            (b'0', Some(b'x')) => (16, start + 2),
+            (b'0', Some(b'b')) => (2, start + 2),
             _ => (10, start),
         };
         self.pos = digits_start;

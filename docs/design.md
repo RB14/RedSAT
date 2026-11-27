@@ -67,9 +67,10 @@ solve x, y {
 }
 ```
 
-Nothing here mentions bits. From the constraints, the compiler infers `x, y ∈ [2, n/2]`
-(39 bits each), sizes `x * y` at 78 bits so it cannot overflow, and compares it against the
-40-bit constant `n`. If `n` is prime, the program prints `no solution`, and that is a proof of
+Nothing here mentions bits. From the constraints, the compiler infers domains for `x` and `y`
+(each factor is at least 2, so neither exceeds `n/2`). It sizes `x * y` so it cannot overflow,
+and compares it against the 40-bit constant `n`. Run with `--stats` to see the inferred domains
+and bit widths. If `n` is prime, the program prints `no solution`, and that is a proof of
 primality.
 
 ### 3.2 Cryptarithm: SEND + MORE = MONEY
@@ -341,9 +342,10 @@ Operators (strawman): arithmetic `+ - * / % ^`(power with concrete exponent); co
 `& | ~ << >>`; ranges `a..b` (exclusive) and `a..=b` (inclusive); comprehensions
 `sum(e for i in r if c)`, `all(…)`, `any(…)`, `count(…)`.
 
-Division and modulo are defined mathematically (floor semantics, `x % m ∈ [0, |m|)`) and are
-encoded *relationally*: `q = a / b` becomes fresh unknowns with `q*b + r == a, 0 <= r < |b|`,
-so no division circuit is ever needed.
+Division and remainder are **Euclidean**: the remainder always lies in `0..|m|`, so
+`-7 / 2 == -4` and `-7 % 2 == 1`. On unknowns (a later phase), they are encoded *relationally*:
+`q = a / b` becomes fresh unknowns with `q*b + r == a, 0 <= r < |b|`, so no division circuit is
+ever needed.
 
 ### 4.5 Integer widths: inferred, exact, never overflowing
 
@@ -399,11 +401,15 @@ solve [all | unique] <vars> [limit K] [minimize <expr> | maximize <expr>] [{ bod
   values, so it is ordinary computation: printing, formatting, arithmetic. Without a body,
   RedSAT prints the listed variables. The `else` body runs when there is no solution.
 - **Modes:**
-  - default: the first solution found;
+  - default: the first solution found (`limit K` asks for the first `K` instead);
   - `all`: every solution, cut off by `limit K` if given;
   - `unique`: one solution plus a proof that no other exists (a second SAT call);
-  - `minimize` / `maximize`: an optimal solution, found with incremental SAT by tightening the
-    bound on the objective until the problem becomes UNSAT.
+  - `minimize` / `maximize`: an optimal solution. The solver repeatedly asks, as a temporary
+    *assumption*, "is there a strictly better one?" until the answer is no. The objective is
+    then fixed at its optimum, so `solve all … minimize e` lists **every** optimal solution.
+- **Self-check.** Every decoded model is re-evaluated against all constraints using the
+  language's own semantics before it is reported. A mismatch is reported as an internal
+  compiler error, never silently as an answer.
 - **Interactive iteration.** `redsat prog.rsat --interactive` pauses after each solution:
   `[n]ext · [a]ll · [q]uit`.
 - **Don't-cares.** If a listed variable is not constrained at all, the solver picks an
@@ -454,7 +460,7 @@ The core is shrunk further by deletion-based minimisation so explanations stay s
 |------------------|-----------------------------------------------------------------------------|-------|
 | `redsat-sat`     | variables, literals, CNF, DIMACS I/O, the `Solver` trait, solver backends   | 0     |
 | `redsat-circuit` | And-Inverter Graph, CNF encoder, exact bit-vector gadgets, circuit solving  | 0     |
-| `redsat-lang`    | lexer, parser, AST, inference, elaboration, word-level IR, bit-blasting     | 1+    |
+| `redsat-lang`    | lexer, parser, AST, inference, elaboration, word-level IR, bit-blasting     | 1     |
 | `redsat-cli`     | the `redsat` command-line tool                                              | 0+    |
 
 Dependencies point strictly downwards (`cli → lang → circuit → sat`). Only `redsat-sat` touches
@@ -612,7 +618,11 @@ var n = 42              // ok: the initializer determines the type
 - **Encoder equivalence.** For random small circuits and every input assignment, check that
   "CNF + inputs fixed" is satisfiable exactly when the circuit evaluates to true.
 - **Round trips.** DIMACS write → parse → identical formula.
-- **Golden end-to-end tests (Phase 1+).** `.rsat` programs paired with their expected output.
+- **Golden end-to-end tests.** Every program in `crates/redsat-lang/tests/programs/` (errors,
+  features, strict mode with its own `redsat.toml`) and every file in `examples/` is run, and
+  its output plus rendered diagnostics are compared with a checked-in `.out` file. After a
+  reviewed change in behaviour, `REDSAT_BLESS=1 cargo test -p redsat-lang --test programs`
+  rewrites the expectations.
 - **Benchmarks (Phase 5).** Encoding size and solve time, compared against MiniZinc and Z3 on
   shared problems. Solve times on *satisfiable* instances are heavy-tailed and sensitive to the
   exact encoding. In the factoring experiment of §4.5, the smaller circuit proved uniqueness
@@ -624,11 +634,11 @@ var n = 42              // ok: the initializer determines the type
 | Phase | Scope                                                                                         | Milestone                       |
 |-------|-----------------------------------------------------------------------------------------------|---------------------------------|
 | 0 ✅  | AIG, Tseitin/PG encoder, DIMACS I/O, `Solver` trait + CaDiCaL, exact unsigned gadgets          | factoring via hand-built circuit |
-| 1     | lexer, parser, type inference, `var`/`require`/`solve`/`print`, bool + int with inferred widths, signed gadgets, compile-time `for`/`if`, `solve all/unique/limit`, `redsat.toml` + strict mode, VS Code grammar + Markdown fences + snippets | factoring, triples, logic puzzles in `.rsat` |
+| 1 ✅  | lexer, parser, type inference, `var`/`require`/`solve`/`print`, bool + int with inferred widths, signed gadgets, compile-time `for`/`if`, **symbolic `if`** (pulled forward), `solve all/unique/limit`, **`minimize`/`maximize`** (pulled forward), `redsat.toml` + strict mode, VS Code grammar + Markdown fences + snippets | factoring, triples, logic puzzles in `.rsat` |
 | 2     | language server: live diagnostics, autocomplete, hovers with inferred domains and widths       | editor intelligence             |
 | 3     | arrays, functions, comprehensions, stdlib (`all_different`, `sum`, `count`), cardinality encodings | N-Queens, cryptarithms, graph colouring |
-| 4     | symbolic `if`/assignment merging, `/` `%`, bitwise ops, chars, strings, enums, structs          | string puzzles, scheduling      |
-| 5     | `minimize`/`maximize`, interactive mode, UNSAT explanations, incremental multiple `solve`s      | knapsack, puzzle generation     |
+| 4     | `/` `%` on unknowns, bitwise ops, chars, strings, enums, structs                               | string puzzles, scheduling      |
+| 5     | interactive mode, UNSAT explanations, incremental multiple `solve`s, binary-search optimization | puzzle generation               |
 | 6     | optimiser: encoding selection, symmetry breaking, CSE; benchmark suite                           | performance                     |
 | 7     | REPL, built-in CDCL solver                                                                      | stretch                         |
 

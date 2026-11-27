@@ -1,0 +1,99 @@
+/* RedSAT syntax showcase.
+   Exercises every token class of the TextMate grammar. Block comments do not nest:
+   this /* does not open a second level, so the next star-slash closes the comment. */
+
+// ---- 3.1 Factoring ------------------------------------------------------------------------
+var n = 1000036000099          // = 1000003 × 1000033, known at compile time
+var x, y                       // unknowns: types and bit widths are inferred
+
+require x > 1 and y > 1        // rule out the trivial 1 × n
+require x <= y                 // symmetry breaking: halves the search space
+require x * y == n
+
+solve x, y {
+    print "{n} = {x} × {y}"
+}
+
+// ---- 3.2 Cryptarithm ----------------------------------------------------------------------
+var s, e, n2, d, m, o, r, y2: int[0..=9]
+
+require all_different([s, e, n2, d, m, o, r, y2])
+require s != 0 and m != 0
+require (            1000*s + 100*e + 10*n2 + d
+         +           1000*m + 100*o + 10*r + e
+         == 10000*m + 1000*o + 100*n2 + 10*e + y2 )
+
+solve s, e, n2, d, m, o, r, y2     // no body: prints the listed variables
+
+// ---- 3.3 N-Queens -------------------------------------------------------------------------
+var N = 8
+var queen: [int[0..N]; N]
+
+for r1 in 0..N {
+    for r2 in r1 + 1..N {
+        var dr = r2 - r1
+        require queen[r1] != queen[r2]
+        require queen[r1] - queen[r2] != dr
+        require queen[r2] - queen[r1] != dr
+    }
+}
+
+solve all queen limit 3 {
+    print queen
+}
+
+// ---- 3.4 Knapsack -------------------------------------------------------------------------
+var weight   = [12, 2, 1, 1,  4]
+var value    = [ 4, 2, 1, 2, 10]
+var capacity = 15
+var take: [bool; len(weight)]
+
+require sum(weight[i] for i in 0..len(weight) if take[i]) <= capacity
+solve take maximize sum(value[i] for i in 0..len(weight) if take[i])
+solve take minimize count(take)
+
+// ---- 3.5 Symbolic control flow ------------------------------------------------------------
+var a, b: int[0..=100]
+var biggest = a
+if b > a {
+    biggest = b
+} else {
+    biggest = a
+}
+require biggest == 42 implies a + b == 50
+solve unique a, b {
+    print "a = {a}, b = {b}"
+} else {
+    print "no solution"
+}
+
+// ---- Types, numbers, operators ------------------------------------------------------------
+var flags: uint<8>
+var word32: int<32>
+var grid: [[int[1..=9]; 9]; 9]
+var letter: char
+var name: string
+var ok: bool = true or false
+var mask = 0xFF_FF - 0b1010_0101 + 1_000
+require (flags & 0x0F) | (flags >> 4) == ~mask << 1
+require -abs(word32) % 7 ^ 2 / 3 >= min(1, max(2, 3))
+require not ok xor (x iff y) implies any(c == 'z' for c in name)
+require all(c in 'a'..='z' for c in name) and len(name) < 5
+require reverse(name) == name
+var all = 3                     // `all` is not reserved: it is an identifier here...
+var unique = all + 1            // ...and so is `unique`
+var limit = 10                  // contextual: highlighted, but a legal identifier
+
+// ---- Functions ----------------------------------------------------------------------------
+fn clamp(v: int, lo: int, hi: int) -> int {
+    if v < lo { return lo }
+    return min(max(v, lo), hi)
+}
+require clamp(x, 0, 9) == helper(y)
+
+// ---- Strings and chars --------------------------------------------------------------------
+print "escapes: \n \t \r \0 \\ \" \{ not interpolated \} and a bad one: \q"
+print "nested: {clamp(x, 0, len("abc"))} and {queen[0] + 1}"
+var newline = '\n'
+var quote = '\''
+var brace = '{'

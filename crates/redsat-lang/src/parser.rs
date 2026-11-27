@@ -648,7 +648,7 @@ fn string_parts(raw: &str, base: usize) -> Result<Vec<StrPart>> {
                         Span::new(base + index, base + index + 2),
                         format!("unknown escape `\\{escaped}`"),
                     )
-                    .with_help("the escapes are \\n \\t \\r \\0 \\\\ \\\" \\{ \\}")
+                    .with_help("the escapes are \\n \\t \\r \\0 \\\\ \\\" \\' \\{ \\}")
                 })?;
                 text.push(value);
             }

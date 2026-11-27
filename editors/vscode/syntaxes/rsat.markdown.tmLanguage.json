@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "RedSAT code blocks in Markdown",
+  "scopeName": "markdown.rsat.codeblock",
+  "fileTypes": [],
+  "comment": "Injected into text.html.markdown. Mirrors the fenced_code_block_<lang> rules of VS Code's built-in markdown grammar (extensions/markdown-basics), for ```rsat / ```redsat and ~~~ fences. `L:` gives it priority over the built-in fenced_code_block_unknown rule; `-comment` keeps fences inside HTML comments untouched.",
+  "injectionSelector": "L:text.html.markdown -comment",
+  "patterns": [{ "include": "#fenced_code_block_rsat" }],
+  "repository": {
+    "fenced_code_block_rsat": {
+      "name": "markup.fenced_code.block.markdown",
+      "begin": "(^|\\G)(\\s*)(`{3,}|~{3,})\\s*(?i:(rsat|redsat)((\\s+|:|,|\\{|\\?)[^`]*)?$)",
+      "beginCaptures": {
+        "3": { "name": "punctuation.definition.markdown" },
+        "4": { "name": "fenced_code.block.language.markdown" },
+        "5": { "name": "fenced_code.block.language.attributes.markdown" }
+      },
+      "end": "(^|\\G)(\\2|\\s{0,3})(\\3)\\s*$",
+      "endCaptures": {
+        "3": { "name": "punctuation.definition.markdown" }
+      },
+      "patterns": [
+        {
+          "begin": "(^|\\G)(\\s*)(.*)",
+          "while": "(^|\\G)(?!\\s*([`~]{3,})\\s*$)",
+          "contentName": "meta.embedded.block.rsat",
+          "patterns": [{ "include": "source.rsat" }]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "Unknown with a type": {
+    "prefix": "var",
+    "body": [
+      "var ${1:x}: ${2|int,bool,uint,char,string|}$0"
+    ],
+    "description": "Declare an unknown with an explicit type"
+  },
+  "Unknown integer in a range": {
+    "prefix": "varr",
+    "body": [
+      "var ${1:x}: int[${2:0}..=${3:9}]$0"
+    ],
+    "description": "Declare an unknown integer with an inclusive domain"
+  },
+  "Constraint": {
+    "prefix": "require",
+    "body": [
+      "require ${1:condition}$0"
+    ],
+    "description": "State a constraint every solution must satisfy"
+  },
+  "All different": {
+    "prefix": "alldiff",
+    "body": [
+      "require all_different([${1:a, b, c}])$0"
+    ],
+    "description": "Require pairwise distinct values (arrives with arrays in Phase 3)"
+  },
+  "Solve with body": {
+    "prefix": "solve",
+    "body": [
+      "solve ${1:x} {",
+      "\tprint \"${2:$1 = {$1\\}}\"$0",
+      "}"
+    ],
+    "description": "Find one solution and print it"
+  },
+  "Solve all": {
+    "prefix": "solveall",
+    "body": [
+      "solve all ${1:x} limit ${2:10} {",
+      "\tprint \"${3:$1 = {$1\\}}\"$0",
+      "}"
+    ],
+    "description": "Enumerate solutions (projected on the listed variables), up to a limit"
+  },
+  "Solve unique": {
+    "prefix": "solveunique",
+    "body": [
+      "solve unique ${1:x}$0"
+    ],
+    "description": "Find a solution and prove that no other exists"
+  },
+  "Solve minimize": {
+    "prefix": "solvemin",
+    "body": [
+      "solve ${1:x} minimize ${2:objective}$0"
+    ],
+    "description": "Find a solution minimizing an objective"
+  },
+  "Solve maximize": {
+    "prefix": "solvemax",
+    "body": [
+      "solve ${1:x} maximize ${2:objective}$0"
+    ],
+    "description": "Find a solution maximizing an objective"
+  },
+  "For loop": {
+    "prefix": "for",
+    "body": [
+      "for ${1:i} in ${2:0}..${3:N} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Compile-time loop over a half-open range (unrolled)"
+  },
+  "If": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Conditional block"
+  },
+  "If / else": {
+    "prefix": "ife",
+    "body": [
+      "if ${1:condition} {",
+      "\t$2",
+      "} else {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Conditional block with an else branch"
+  },
+  "Function": {
+    "prefix": "fn",
+    "body": [
+      "fn ${1:name}(${2:x}: ${3:int}) -> ${4:int} {",
+      "\treturn ${5:$2}$0",
+      "}"
+    ],
+    "description": "Function definition (inlined at every call) (arrives in Phase 3)"
+  },
+  "Print": {
+    "prefix": "print",
+    "body": [
+      "print \"{${1:x}}$0\""
+    ],
+    "description": "Print an interpolated string"
+  }
+}

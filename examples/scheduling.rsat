@@ -1,0 +1,37 @@
+// Scheduling: run five jobs on one machine. Each job has a duration and a release time;
+// some jobs must wait for others. Find start times that finish everything as early as
+// possible.
+
+struct Job { name: string, duration: int, release: int }
+
+var jobs = [
+    Job("design", 3, 0), Job("build", 5, 0), Job("test", 2, 0),
+    Job("docs", 2, 1), Job("ship", 1, 0),
+]
+var after = [[0, 1], [1, 2], [2, 4], [3, 4]]      // [a, b]: b starts after a ends
+var n = len(jobs)
+var horizon = sum(job.duration for job in jobs) + 1
+var start: [int[0..=horizon]; n]
+
+fn end(start: int, job: Job) -> int {
+    return start + job.duration
+}
+
+for i in 0..n {
+    require start[i] >= jobs[i].release
+    for j in i + 1..n {
+        // One machine: jobs i and j do not overlap.
+        require end(start[i], jobs[i]) <= start[j] or end(start[j], jobs[j]) <= start[i]
+    }
+}
+for pair in after {
+    require end(start[pair[0]], jobs[pair[0]]) <= start[pair[1]]
+}
+
+var makespan = max(end(start[i], jobs[i]) for i in 0..n)
+solve start minimize makespan {
+    for i in 0..n {
+        print "{jobs[i].name}: {start[i]}–{end(start[i], jobs[i])}"
+    }
+    print "everything done at {makespan}"
+}

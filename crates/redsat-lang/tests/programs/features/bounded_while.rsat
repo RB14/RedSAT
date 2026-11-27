@@ -1,0 +1,10 @@
+// Collatz: which starting values up to 30 reach 1 in exactly 7 steps?
+var start: int[1..=30]
+var n = start
+var steps = 0
+while n != 1 bound 20 {
+    n = if n % 2 == 0 { n / 2 } else { 3 * n + 1 }
+    steps = steps + 1
+}
+require steps == 7
+solve all start

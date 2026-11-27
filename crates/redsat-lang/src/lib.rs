@@ -36,7 +36,7 @@ use crate::check::TypeInfo;
 use crate::interp::Interpreter;
 
 /// Creates a fresh SAT solver. RedSAT calls it once per `solve` attempt.
-pub type SolverFactory = dyn Fn() -> Box<dyn Solver>;
+pub type SolverFactory = dyn Fn() -> Box<dyn Solver> + Sync;
 
 /// The result of running a program.
 #[derive(Debug, Default)]
@@ -55,13 +55,32 @@ impl RunOutcome {
     }
 }
 
+/// The stack size for compiling and running a program. Programs are elaborated by a
+/// tree-walking interpreter, and inlined (possibly recursive) function calls nest deeply; the
+/// memory is only reserved, not used, unless a program needs it.
+const STACK_SIZE: usize = 1 << 30;
+
+/// Runs `job` on a thread with a large stack and returns its result.
+fn with_large_stack<T: Send>(job: impl FnOnce() -> T + Send) -> T {
+    std::thread::scope(|scope| {
+        let handle = std::thread::Builder::new()
+            .name("redsat".into())
+            .stack_size(STACK_SIZE)
+            .spawn_scoped(scope, job)
+            .expect("cannot start the compiler thread");
+        handle
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })
+}
+
 /// Parses and type-checks `source` without running it.
 #[must_use]
 pub fn check(source: &SourceFile, options: &CompilerOptions) -> Vec<Diagnostic> {
-    match front_end(source, options) {
+    with_large_stack(|| match front_end(source, options) {
         Ok((_, _, warnings)) => warnings,
         Err(errors) => errors,
-    }
+    })
 }
 
 /// Compiles and runs `source`. Program output (`print`, solutions) goes to `out`; diagnostics
@@ -70,7 +89,16 @@ pub fn run(
     source: &SourceFile,
     options: &CompilerOptions,
     factory: &SolverFactory,
-    out: &mut dyn Write,
+    out: &mut (dyn Write + Send),
+) -> RunOutcome {
+    with_large_stack(|| run_here(source, options, factory, out))
+}
+
+fn run_here(
+    source: &SourceFile,
+    options: &CompilerOptions,
+    factory: &SolverFactory,
+    out: &mut (dyn Write + Send),
 ) -> RunOutcome {
     let (program, types, mut diagnostics) = match front_end(source, options) {
         Ok(checked) => checked,

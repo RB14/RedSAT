@@ -1,0 +1,35 @@
+// N-Queens: place N queens on an N×N board so that no two attack each other.
+//
+// Every row holds exactly one queen, so each row's queen is a single unknown: its column.
+// Columns must differ, and two queens share a diagonal exactly when their columns differ by
+// the distance between their rows.
+
+var N = 8
+var queen: [int[0..N]; N]               // queen[r] = column of the queen in row r
+
+require all_different(queen)
+for r1 in 0..N {
+    for r2 in r1 + 1..N {
+        require abs(queen[r1] - queen[r2]) != r2 - r1
+    }
+}
+
+var count = 0
+solve all queen {
+    count = count + 1
+    if count == 1 {
+        for r in 0..N {
+            print board_row(queen[r], N)
+        }
+    }
+}
+print "{N} queens can be placed in {count} ways"
+
+// Draws one row of the board: a queen in column `q`.
+fn board_row(q: int, n: int) -> string {
+    var line = ""
+    for c in 0..n {
+        line = line + (if c == q { "Q " } else { ". " })
+    }
+    return line
+}

@@ -1,0 +1,2 @@
+hand = [Card(rank: 1, suit: Spades), Card(rank: 2, suit: Hearts)]
+Card(rank: 13, suit: Hearts) true

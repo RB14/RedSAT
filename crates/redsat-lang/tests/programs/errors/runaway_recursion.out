@@ -1,0 +1,6 @@
+error: calls nested more than 200 deep
+ --> runaway_recursion.rsat:3:12
+  |
+3 |     return down(n - 1)
+  |            ^^^^^^^^^^^
+  = note: functions are inlined, so recursion must stop based on values known at compile time

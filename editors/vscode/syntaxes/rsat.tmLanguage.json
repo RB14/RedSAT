@@ -2,25 +2,62 @@
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
   "name": "RedSAT",
   "scopeName": "source.rsat",
-  "fileTypes": ["rsat"],
+  "fileTypes": [
+    "rsat"
+  ],
   "comment": "Lexical contract: this grammar must agree with the redsat-lang lexer. INVARIANT: the reserved keywords are exactly the words listed in rules whose `match` has the shape \\b(?:kw1|kw2|...)\\b (see #keywords). No other rule may use that shape; contextual keywords, types and builtins use capturing groups instead. A unit test in redsat-lang parses that shape and compares it to the lexer's keyword table.",
   "patterns": [
-    { "include": "#comments" },
-    { "include": "#strings" },
-    { "include": "#chars" },
-    { "include": "#numbers" },
-    { "include": "#solve-modifiers" },
-    { "include": "#function-definition" },
-    { "include": "#var-declaration" },
-    { "include": "#for-binding" },
-    { "include": "#keywords" },
-    { "include": "#contextual-keywords" },
-    { "include": "#types" },
-    { "include": "#builtin-functions" },
-    { "include": "#function-calls" },
-    { "include": "#identifiers" },
-    { "include": "#operators" },
-    { "include": "#punctuation" }
+    {
+      "include": "#type-declarations"
+    },
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#chars"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#solve-modifiers"
+    },
+    {
+      "include": "#function-definition"
+    },
+    {
+      "include": "#var-declaration"
+    },
+    {
+      "include": "#for-binding"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#contextual-keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#builtin-functions"
+    },
+    {
+      "include": "#function-calls"
+    },
+    {
+      "include": "#identifiers"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    }
   ],
   "repository": {
     "comments": {
@@ -29,147 +66,262 @@
         {
           "name": "comment.block.rsat",
           "begin": "/\\*",
-          "beginCaptures": { "0": { "name": "punctuation.definition.comment.begin.rsat" } },
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.begin.rsat"
+            }
+          },
           "end": "\\*/",
-          "endCaptures": { "0": { "name": "punctuation.definition.comment.end.rsat" } }
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.end.rsat"
+            }
+          }
         },
         {
           "name": "comment.line.double-slash.rsat",
           "match": "(//).*$",
-          "captures": { "1": { "name": "punctuation.definition.comment.rsat" } }
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.comment.rsat"
+            }
+          }
         }
       ]
     },
-
     "strings": {
       "comment": "Double-quoted string with escapes and { expression } interpolation. Like the compiler's lexer, a string never spans lines.",
       "name": "string.quoted.double.rsat",
       "begin": "\"",
-      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.rsat" } },
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.begin.rsat"
+        }
+      },
       "end": "\"|$",
-      "endCaptures": { "0": { "name": "punctuation.definition.string.end.rsat" } },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.rsat"
+        }
+      },
       "patterns": [
-        { "include": "#string-escapes" },
-        { "include": "#string-interpolation" }
+        {
+          "include": "#string-escapes"
+        },
+        {
+          "include": "#string-interpolation"
+        }
       ]
     },
     "string-escapes": {
       "patterns": [
-        { "name": "constant.character.escape.rsat", "match": "\\\\[ntr0\\\\\"'{}]" },
-        { "name": "invalid.illegal.unknown-escape.rsat", "match": "\\\\." }
+        {
+          "name": "constant.character.escape.rsat",
+          "match": "\\\\[ntr0\\\\\"'{}]"
+        },
+        {
+          "name": "invalid.illegal.unknown-escape.rsat",
+          "match": "\\\\."
+        }
       ]
     },
     "string-interpolation": {
       "name": "meta.interpolation.rsat",
       "begin": "\\{",
       "beginCaptures": {
-        "0": { "name": "punctuation.section.interpolation.begin.rsat punctuation.section.embedded.begin.rsat" }
+        "0": {
+          "name": "punctuation.section.interpolation.begin.rsat punctuation.section.embedded.begin.rsat"
+        }
       },
       "end": "\\}",
       "endCaptures": {
-        "0": { "name": "punctuation.section.interpolation.end.rsat punctuation.section.embedded.end.rsat" }
+        "0": {
+          "name": "punctuation.section.interpolation.end.rsat punctuation.section.embedded.end.rsat"
+        }
       },
       "contentName": "meta.embedded.expression.rsat",
-      "patterns": [{ "include": "$self" }]
+      "patterns": [
+        {
+          "include": "$self"
+        }
+      ]
     },
-
     "chars": {
       "comment": "Character literal: exactly one character or one escape between single quotes.",
       "name": "string.quoted.single.rsat",
       "match": "(')([^'\\\\\\n]|\\\\[ntr0\\\\'\"{}])(')",
       "captures": {
-        "1": { "name": "punctuation.definition.char.begin.rsat" },
+        "1": {
+          "name": "punctuation.definition.char.begin.rsat"
+        },
         "2": {
           "name": "constant.character.rsat",
-          "patterns": [{ "name": "constant.character.escape.rsat", "match": "\\\\." }]
+          "patterns": [
+            {
+              "name": "constant.character.escape.rsat",
+              "match": "\\\\."
+            }
+          ]
         },
-        "3": { "name": "punctuation.definition.char.end.rsat" }
+        "3": {
+          "name": "punctuation.definition.char.end.rsat"
+        }
       }
     },
-
     "numbers": {
       "patterns": [
-        { "name": "constant.numeric.hex.rsat", "match": "\\b0x[0-9a-fA-F_]+\\b" },
-        { "name": "constant.numeric.binary.rsat", "match": "\\b0b[01_]+\\b" },
-        { "name": "constant.numeric.decimal.rsat", "match": "\\b[0-9][0-9_]*\\b" }
+        {
+          "name": "constant.numeric.hex.rsat",
+          "match": "\\b0x[0-9a-fA-F_]+\\b"
+        },
+        {
+          "name": "constant.numeric.binary.rsat",
+          "match": "\\b0b[01_]+\\b"
+        },
+        {
+          "name": "constant.numeric.decimal.rsat",
+          "match": "\\b[0-9][0-9_]*\\b"
+        }
       ]
     },
-
     "keywords": {
       "comment": "RESERVED keywords only. Keep every rule in the exact shape \\b(?:kw1|kw2|...)\\b: the lexer drift test parses it.",
       "patterns": [
-        { "name": "keyword.declaration.rsat", "match": "\\b(?:var|fn)\\b" },
-        { "name": "keyword.control.return.rsat", "match": "\\b(?:return)\\b" },
-        { "name": "keyword.control.rsat", "match": "\\b(?:if|else|for|in)\\b" },
-        { "name": "keyword.control.constraint.rsat", "match": "\\b(?:require|solve|print)\\b" },
-        { "name": "keyword.operator.word.rsat", "match": "\\b(?:and|or|not|xor|implies|iff)\\b" },
-        { "name": "constant.language.boolean.rsat", "match": "\\b(?:true|false)\\b" }
+        {
+          "name": "keyword.declaration.rsat",
+          "match": "\\b(?:var|fn|enum|struct)\\b"
+        },
+        {
+          "name": "keyword.control.return.rsat",
+          "match": "\\b(?:return)\\b"
+        },
+        {
+          "name": "keyword.control.rsat",
+          "match": "\\b(?:if|else|for|in|while)\\b"
+        },
+        {
+          "name": "keyword.control.constraint.rsat",
+          "match": "\\b(?:require|solve|print)\\b"
+        },
+        {
+          "name": "keyword.operator.word.rsat",
+          "match": "\\b(?:and|or|not|xor|implies|iff)\\b"
+        },
+        {
+          "name": "constant.language.boolean.rsat",
+          "match": "\\b(?:true|false)\\b"
+        }
       ]
     },
-
     "solve-modifiers": {
       "comment": "`all` and `unique` are NOT reserved: they are keywords only directly after `solve`.",
       "match": "\\b(solve)\\s+(all|unique)\\b",
       "captures": {
-        "1": { "name": "keyword.control.constraint.rsat" },
-        "2": { "name": "keyword.control.solve.rsat" }
+        "1": {
+          "name": "keyword.control.constraint.rsat"
+        },
+        "2": {
+          "name": "keyword.control.solve.rsat"
+        }
       }
     },
     "contextual-keywords": {
       "comment": "Contextual (not reserved) solve modifiers, highlighted everywhere for simplicity.",
       "name": "keyword.control.solve.rsat",
-      "match": "\\b(limit|minimize|maximize)\\b"
+      "match": "\\b(limit|minimize|maximize|bound)\\b"
     },
-
     "function-definition": {
       "patterns": [
         {
           "name": "meta.function.parameters.rsat",
           "begin": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(\\()",
           "beginCaptures": {
-            "1": { "name": "keyword.declaration.function.rsat" },
-            "2": { "name": "entity.name.function.rsat" },
-            "3": { "name": "punctuation.section.parameters.begin.rsat" }
+            "1": {
+              "name": "keyword.declaration.function.rsat"
+            },
+            "2": {
+              "name": "entity.name.function.rsat"
+            },
+            "3": {
+              "name": "punctuation.section.parameters.begin.rsat"
+            }
           },
           "end": "\\)",
-          "endCaptures": { "0": { "name": "punctuation.section.parameters.end.rsat" } },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.parameters.end.rsat"
+            }
+          },
           "patterns": [
-            { "include": "#comments" },
+            {
+              "include": "#comments"
+            },
             {
               "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?=:)",
-              "captures": { "1": { "name": "variable.parameter.rsat" } }
+              "captures": {
+                "1": {
+                  "name": "variable.parameter.rsat"
+                }
+              }
             },
-            { "include": "#paren-group" },
-            { "include": "$self" }
+            {
+              "include": "#paren-group"
+            },
+            {
+              "include": "$self"
+            }
           ]
         },
         {
           "comment": "Fallback while typing: `fn name` not (yet) followed by a parameter list.",
           "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
-            "1": { "name": "keyword.declaration.function.rsat" },
-            "2": { "name": "entity.name.function.rsat" }
+            "1": {
+              "name": "keyword.declaration.function.rsat"
+            },
+            "2": {
+              "name": "entity.name.function.rsat"
+            }
           }
         }
       ]
     },
     "paren-group": {
       "begin": "\\(",
-      "beginCaptures": { "0": { "name": "punctuation.section.parens.begin.rsat" } },
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.parens.begin.rsat"
+        }
+      },
       "end": "\\)",
-      "endCaptures": { "0": { "name": "punctuation.section.parens.end.rsat" } },
-      "patterns": [{ "include": "$self" }]
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.parens.end.rsat"
+        }
+      },
+      "patterns": [
+        {
+          "include": "$self"
+        }
+      ]
     },
-
     "var-declaration": {
       "comment": "`var x`, `var x, y: T`, `var x = e`: scope the declared names.",
       "match": "\\b(var)\\b(?:\\s+([A-Za-z_][A-Za-z0-9_]*(?:\\s*,\\s*[A-Za-z_][A-Za-z0-9_]*)*))?",
       "captures": {
-        "1": { "name": "keyword.declaration.var.rsat" },
+        "1": {
+          "name": "keyword.declaration.var.rsat"
+        },
         "2": {
           "patterns": [
-            { "name": "variable.other.declaration.rsat", "match": "[A-Za-z_][A-Za-z0-9_]*" },
-            { "name": "punctuation.separator.comma.rsat", "match": "," }
+            {
+              "name": "variable.other.declaration.rsat",
+              "match": "[A-Za-z_][A-Za-z0-9_]*"
+            },
+            {
+              "name": "punctuation.separator.comma.rsat",
+              "match": ","
+            }
           ]
         }
       }
@@ -178,12 +330,17 @@
       "comment": "`for i in ...` in loops and comprehensions: scope the bound name.",
       "match": "\\b(for)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s+(in)\\b",
       "captures": {
-        "1": { "name": "keyword.control.loop.rsat" },
-        "2": { "name": "variable.other.declaration.rsat" },
-        "3": { "name": "keyword.control.loop.rsat" }
+        "1": {
+          "name": "keyword.control.loop.rsat"
+        },
+        "2": {
+          "name": "variable.other.declaration.rsat"
+        },
+        "3": {
+          "name": "keyword.control.loop.rsat"
+        }
       }
     },
-
     "types": {
       "comment": "Built-in types. Not reserved words, so they use a capturing group (see the grammar-level comment).",
       "patterns": [
@@ -191,10 +348,25 @@
           "comment": "Bit-bounded integers: int<32>, uint<8>, int<W>.",
           "match": "\\b(int|uint)\\s*(<)\\s*([0-9][0-9_]*|[A-Za-z_][A-Za-z0-9_]*)\\s*(>)",
           "captures": {
-            "1": { "name": "support.type.primitive.rsat" },
-            "2": { "name": "punctuation.definition.typeparameters.begin.rsat" },
-            "3": { "patterns": [{ "include": "#numbers" }, { "include": "#identifiers" }] },
-            "4": { "name": "punctuation.definition.typeparameters.end.rsat" }
+            "1": {
+              "name": "support.type.primitive.rsat"
+            },
+            "2": {
+              "name": "punctuation.definition.typeparameters.begin.rsat"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#numbers"
+                },
+                {
+                  "include": "#identifiers"
+                }
+              ]
+            },
+            "4": {
+              "name": "punctuation.definition.typeparameters.end.rsat"
+            }
           }
         },
         {
@@ -203,11 +375,10 @@
         }
       ]
     },
-
     "builtin-functions": {
       "comment": "Built-in functions, highlighted only when immediately followed by `(`.",
       "name": "support.function.builtin.rsat",
-      "match": "\\b(all_different|abs|min|max|len|sum|count|all|any|reverse)\\b(?=\\()"
+      "match": "\\b(all_different|abs|min|max|len|sum|count|all|any|reverse|ord|chr)\\b(?=\\()"
     },
     "function-calls": {
       "name": "entity.name.function.call.rsat",
@@ -217,32 +388,94 @@
       "name": "variable.other.rsat",
       "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
     },
-
     "operators": {
       "comment": "Order matters: longer operators first.",
       "patterns": [
-        { "name": "keyword.operator.range.rsat", "match": "\\.\\.=?" },
-        { "name": "keyword.operator.arrow.rsat", "match": "->" },
-        { "name": "keyword.operator.bitwise.shift.rsat", "match": "<<|>>" },
-        { "name": "keyword.operator.comparison.rsat", "match": "==|!=|<=|>=|<|>" },
-        { "name": "keyword.operator.assignment.rsat", "match": "=" },
-        { "name": "keyword.operator.arithmetic.rsat", "match": "[-+*/%^]" },
-        { "name": "keyword.operator.bitwise.rsat", "match": "[&|~]" }
+        {
+          "name": "keyword.operator.range.rsat",
+          "match": "\\.\\.=?"
+        },
+        {
+          "name": "keyword.operator.arrow.rsat",
+          "match": "->"
+        },
+        {
+          "name": "keyword.operator.bitwise.shift.rsat",
+          "match": "<<|>>"
+        },
+        {
+          "name": "keyword.operator.comparison.rsat",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.assignment.rsat",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.arithmetic.rsat",
+          "match": "[-+*/%^]"
+        },
+        {
+          "name": "keyword.operator.bitwise.rsat",
+          "match": "[&|~]"
+        }
       ]
     },
     "punctuation": {
       "patterns": [
-        { "name": "punctuation.separator.comma.rsat", "match": "," },
-        { "name": "punctuation.separator.colon.rsat", "match": ":" },
-        { "name": "punctuation.separator.semicolon.rsat", "match": ";" },
-        { "name": "punctuation.accessor.rsat", "match": "\\." },
-        { "name": "punctuation.section.block.begin.rsat", "match": "\\{" },
-        { "name": "punctuation.section.block.end.rsat", "match": "\\}" },
-        { "name": "punctuation.section.brackets.begin.rsat", "match": "\\[" },
-        { "name": "punctuation.section.brackets.end.rsat", "match": "\\]" },
-        { "name": "punctuation.section.parens.begin.rsat", "match": "\\(" },
-        { "name": "punctuation.section.parens.end.rsat", "match": "\\)" }
+        {
+          "name": "punctuation.separator.comma.rsat",
+          "match": ","
+        },
+        {
+          "name": "punctuation.separator.colon.rsat",
+          "match": ":"
+        },
+        {
+          "name": "punctuation.separator.semicolon.rsat",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.accessor.rsat",
+          "match": "\\."
+        },
+        {
+          "name": "punctuation.section.block.begin.rsat",
+          "match": "\\{"
+        },
+        {
+          "name": "punctuation.section.block.end.rsat",
+          "match": "\\}"
+        },
+        {
+          "name": "punctuation.section.brackets.begin.rsat",
+          "match": "\\["
+        },
+        {
+          "name": "punctuation.section.brackets.end.rsat",
+          "match": "\\]"
+        },
+        {
+          "name": "punctuation.section.parens.begin.rsat",
+          "match": "\\("
+        },
+        {
+          "name": "punctuation.section.parens.end.rsat",
+          "match": "\\)"
+        }
       ]
+    },
+    "type-declarations": {
+      "comment": "The name declared by `enum Name` or `struct Name`.",
+      "match": "\\b(enum|struct)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": {
+          "name": "keyword.declaration.rsat"
+        },
+        "2": {
+          "name": "entity.name.type.rsat"
+        }
+      }
     }
   }
 }

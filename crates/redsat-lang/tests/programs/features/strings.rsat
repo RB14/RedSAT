@@ -1,0 +1,11 @@
+var greeting = "hello"
+print len(greeting), reverse(greeting), greeting[1], greeting + ", world"
+var w: string[0..=3]
+require w + "!" == "hey!" or len(w) == 0
+solve all w
+var a, b: string[1..=2]
+require a + b == "xyz"
+solve all a, b
+var c: char
+require c in "aeiou" and c > 'k'
+solve all c

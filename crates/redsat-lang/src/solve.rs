@@ -279,7 +279,7 @@ impl<'a> Attempt<'a> {
         for &term in required {
             cs.require(blasted.of(term).edge());
         }
-        for &edge in &blasted.domain_constraints {
+        for &edge in &blasted.side_constraints {
             cs.require(edge);
         }
         Self {

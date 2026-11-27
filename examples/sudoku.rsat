@@ -1,0 +1,40 @@
+// Sudoku: fill the grid so that every row, column and 3×3 box contains the digits 1–9.
+//
+// The givens are an ordinary (known) 2-D array; 0 marks an empty cell. The grid of unknowns
+// gets one constraint per given cell and one `all_different` per row, column and box.
+// `solve unique` also proves the puzzle has exactly one solution.
+
+var givens = [
+    [5, 3, 0,  0, 7, 0,  0, 0, 0],
+    [6, 0, 0,  1, 9, 5,  0, 0, 0],
+    [0, 9, 8,  0, 0, 0,  0, 6, 0],
+    [8, 0, 0,  0, 6, 0,  0, 0, 3],
+    [4, 0, 0,  8, 0, 3,  0, 0, 1],
+    [7, 0, 0,  0, 2, 0,  0, 0, 6],
+    [0, 6, 0,  0, 0, 0,  2, 8, 0],
+    [0, 0, 0,  4, 1, 9,  0, 0, 5],
+    [0, 0, 0,  0, 8, 0,  0, 7, 9],
+]
+
+var grid: [[int[1..=9]; 9]; 9]
+
+for r in 0..9 {
+    for c in 0..9 {
+        if givens[r][c] != 0 {
+            require grid[r][c] == givens[r][c]
+        }
+    }
+}
+for i in 0..9 {
+    require all_different(grid[i])                                  // row i
+    require all_different([grid[r][i] for r in 0..9])               // column i
+    var top = i / 3 * 3
+    var left = i % 3 * 3
+    require all_different([grid[top + r][left + c] for r in 0..3 for c in 0..3])   // box i
+}
+
+solve unique grid {
+    for row in grid {
+        print row
+    }
+}

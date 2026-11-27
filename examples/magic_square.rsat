@@ -1,0 +1,19 @@
+// A magic square: the numbers 1 to 9 in a 3×3 grid, so that every row, column and both
+// diagonals add up to the same total.
+
+var square: [[int[1..=9]; 3]; 3]
+var total = 15                       // = (1 + 2 + … + 9) / 3
+
+require all_different([square[r][c] for r in 0..3 for c in 0..3])
+for i in 0..3 {
+    require sum(square[i]) == total
+    require sum(square[r][i] for r in 0..3) == total
+}
+require sum(square[i][i] for i in 0..3) == total
+require sum(square[i][2 - i] for i in 0..3) == total
+
+var count = 0
+solve all square {
+    count = count + 1
+}
+print "{count} magic squares (the 8 rotations and reflections of one)"

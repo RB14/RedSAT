@@ -13,4 +13,4 @@ pub mod int;
 pub use aig::{Aig, Edge, Node, NodeId, Simulation};
 pub use circuit_solver::CircuitSolver;
 pub use encoder::CnfEncoder;
-pub use int::{IntVec, Layout};
+pub use int::{BitOp, IntVec, Layout};

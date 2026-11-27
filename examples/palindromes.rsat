@@ -1,0 +1,10 @@
+// Strings: find five-letter palindromes made of the letters a, b and c, with no two equal
+// neighbours.
+
+var word: string[5..=5]
+
+require all(ch in 'a'..='c' for ch in word)
+require reverse(word) == word
+require all(word[i] != word[i + 1] for i in 0..4)
+
+solve all word limit 6

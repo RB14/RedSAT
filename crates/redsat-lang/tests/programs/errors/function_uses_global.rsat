@@ -1,0 +1,4 @@
+var limit = 10
+fn small(x: int) -> bool {
+    return x < limit
+}

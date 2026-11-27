@@ -1,0 +1,25 @@
+// Graph coloring: give every region a color so that neighbouring regions differ.
+//
+// The seven states and territories of mainland Australia and Tasmania, with their borders.
+// Enums name the colors; a struct describes each border.
+
+enum Color { Red, Green, Blue }
+struct Border { a: int, b: int }
+
+var regions = ["WA", "NT", "SA", "QLD", "NSW", "VIC", "TAS"]
+var borders = [
+    Border(0, 1), Border(0, 2), Border(1, 2), Border(1, 3),
+    Border(2, 3), Border(2, 4), Border(2, 5), Border(3, 4), Border(4, 5),
+]
+
+var color: [Color; len(regions)]
+for border in borders {
+    require color[border.a] != color[border.b]
+}
+require color[0] == Color.Red            // break the symmetry between colors
+
+solve color {
+    for i in 0..len(regions) {
+        print "{regions[i]}: {color[i]}"
+    }
+}

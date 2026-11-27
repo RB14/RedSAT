@@ -1,0 +1,5 @@
+error: index 3 is out of range for length 3
+ --> index_out_of_range.rsat:2:10
+  |
+2 | print xs[3]
+  |          ^

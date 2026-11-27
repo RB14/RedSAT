@@ -1,0 +1,18 @@
+// The classic cryptarithm from 1924:  SEND + MORE = MONEY.
+//
+// Each letter is a different digit and the leading letters are not 0. The column addition
+// becomes one equation over place values.
+
+var s, e, n, d, m, o, r, y: int[0..=9]
+
+require all_different([s, e, n, d, m, o, r, y])
+require s != 0 and m != 0
+require (            1000*s + 100*e + 10*n + d
+         +           1000*m + 100*o + 10*r + e
+         == 10000*m + 1000*o + 100*n + 10*e + y )
+
+solve unique s, e, n, d, m, o, r, y {
+    print "  {s}{e}{n}{d}"
+    print "+ {m}{o}{r}{e}"
+    print "= {m}{o}{n}{e}{y}"
+}

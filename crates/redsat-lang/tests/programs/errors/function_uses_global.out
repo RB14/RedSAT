@@ -1,0 +1,7 @@
+error: unknown variable `limit`
+ --> function_uses_global.rsat:3:16
+  |
+3 |     return x < limit
+  |                ^^^^^ not declared
+  = note: functions can only use their own parameters and variables
+  = help: pass `limit` to the function as a parameter

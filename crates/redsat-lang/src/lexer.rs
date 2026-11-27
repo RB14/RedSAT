@@ -31,6 +31,9 @@ pub enum TokenKind {
     Else,
     For,
     In,
+    While,
+    Enum,
+    Struct,
     And,
     Or,
     Not,
@@ -50,6 +53,7 @@ pub enum TokenKind {
     Comma,
     Colon,
     Semicolon,
+    Dot,
     DotDot,
     DotDotEq,
     Arrow,
@@ -59,6 +63,10 @@ pub enum TokenKind {
     Slash,
     Percent,
     Caret,
+    Amp,
+    Pipe,
+    Shl,
+    Shr,
     EqEq,
     NotEq,
     Lt,
@@ -98,6 +106,9 @@ impl TokenKind {
             Self::Else => "else",
             Self::For => "for",
             Self::In => "in",
+            Self::While => "while",
+            Self::Enum => "enum",
+            Self::Struct => "struct",
             Self::And => "and",
             Self::Or => "or",
             Self::Not => "not",
@@ -115,6 +126,7 @@ impl TokenKind {
             Self::Comma => ",",
             Self::Colon => ":",
             Self::Semicolon => ";",
+            Self::Dot => ".",
             Self::DotDot => "..",
             Self::DotDotEq => "..=",
             Self::Arrow => "->",
@@ -124,6 +136,10 @@ impl TokenKind {
             Self::Slash => "/",
             Self::Percent => "%",
             Self::Caret => "^",
+            Self::Amp => "&",
+            Self::Pipe => "|",
+            Self::Shl => "<<",
+            Self::Shr => ">>",
             Self::EqEq => "==",
             Self::NotEq => "!=",
             Self::Lt => "<",
@@ -150,6 +166,9 @@ pub fn keyword(word: &str) -> Option<TokenKind> {
         "else" => TokenKind::Else,
         "for" => TokenKind::For,
         "in" => TokenKind::In,
+        "while" => TokenKind::While,
+        "enum" => TokenKind::Enum,
+        "struct" => TokenKind::Struct,
         "and" => TokenKind::And,
         "or" => TokenKind::Or,
         "not" => TokenKind::Not,
@@ -348,7 +367,11 @@ impl Lexer<'_> {
             },
             Some(c) if c != '\'' && c != '\n' => (c, c.len_utf8()),
             _ => {
-                return Err(self.error(start, start + 1, "empty or unterminated character literal"));
+                return Err(self.error(
+                    start,
+                    start + 1,
+                    "empty or unterminated character literal",
+                ));
             }
         };
         if rest[consumed..].starts_with('\'') {
@@ -375,6 +398,8 @@ impl Lexer<'_> {
             ("!=", TokenKind::NotEq),
             ("<=", TokenKind::Le),
             (">=", TokenKind::Ge),
+            ("<<", TokenKind::Shl),
+            (">>", TokenKind::Shr),
         ];
         if let Some((text, kind)) = MULTI.iter().find(|(text, _)| rest.starts_with(text)) {
             self.pos += text.len();
@@ -399,6 +424,9 @@ impl Lexer<'_> {
             b',' => TokenKind::Comma,
             b':' => TokenKind::Colon,
             b';' => TokenKind::Semicolon,
+            b'.' => TokenKind::Dot,
+            b'&' => TokenKind::Amp,
+            b'|' => TokenKind::Pipe,
             b'+' => TokenKind::Plus,
             b'-' => TokenKind::Minus,
             b'*' => TokenKind::Star,

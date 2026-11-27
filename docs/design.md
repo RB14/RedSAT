@@ -199,7 +199,7 @@ require a * a + b * b == total
 solve all total             // 1, 2, 4, 5, 8, 9, 10, 13, … each exactly once
 ```
 
-### 3.7 Strings (later phase, a teaser)
+### 3.7 Strings
 
 **The problem.** Find five-letter lowercase palindromes: words that read the same forwards and
 backwards, like "level" or "kayak".
@@ -208,8 +208,7 @@ backwards, like "level" or "kayak".
 every character, and the palindrome property itself. `limit 10` asks for the first ten answers.
 
 ```rsat
-var word: string
-require len(word) == 5
+var word: string[5..=5]
 require all(c in 'a'..='z' for c in word)
 require reverse(word) == word
 
@@ -262,10 +261,27 @@ every unknown to be annotated can say so with the `explicit-types` compiler opti
   inside the branch becomes the guarded constraint `c implies φ`.
 - **`for i in lo..hi`:** `lo` and `hi` are concrete, the loop is fully unrolled, and `i` is
   concrete in each copy of the body. This is the language's main *metaprogramming* tool.
-- **Bounded `while` (later):** `while cond bound K { … }` with a symbolic `cond` unrolls `K`
-  guarded iterations and requires that the loop has exited by then (as in bounded model checking).
-- **Functions** (`fn name(params) -> T { … }`) are inlined at every call. Recursion is allowed
-  only when it terminates on concrete arguments; the compiler enforces an evaluation budget.
+- **`for x in array`** and **`for c in string`** iterate over elements. For a string whose
+  length is unknown, the body runs for every position up to its capacity, guarded by
+  `position < len(string)`.
+- **`while cond { … }`** loops while a known condition holds. When the condition depends on
+  unknowns, the loop needs a bound: `while cond bound K { … }` unrolls at most `K` guarded
+  iterations and requires that the loop has exited by then, as in bounded model checking.
+- **`a and b`, `a or b`, `a implies b`** evaluate `b` only when `a` does not already decide the
+  result. When `a` is unknown, `b` is evaluated *under the condition* `a` (or `not a` for `or`).
+  Requirements that `b` implies, such as an index being in range, therefore only apply where
+  `b` matters: `i < len(xs) and xs[i] > 0` is safe. An `if cond { a } else { b }` used as a
+  value behaves the same way.
+- **Functions** (`fn name(params) -> T { … }`, declared at the top level) are inlined at every
+  call:
+  - parameters need types, and array parameters may omit the length (`xs: [int]`);
+  - a function only sees its parameters and its own variables, never the caller's;
+  - a function may contain `var` unknowns, `require`, loops and other calls;
+  - a `return` under a condition that depends on unknowns records the result for that
+    condition and masks the function's later effects on those paths, so ordinary early-return
+    code works on unknowns;
+  - recursion is allowed when it stops on known values; calls nested more than 200 deep are
+    reported as an error.
 
 ### 4.4 Types
 
@@ -295,15 +311,15 @@ var celsius: int[-40..=50]      // negative bounds are fine
 var level: int[0..N]            // bounds may be any compile-time expression
 var byte: uint<8>               // 0 … 255
 var sample: int<16>             // −32768 … 32767
-var letter: char                // e.g. 'q'                                     (later phase)
-var name: string                // e.g. "kayak"                                 (later phase)
-var row: [int[1..=9]; 9]        // nine digits, each from 1 to 9                (later phase)
-var board: [[bool; 8]; 8]       // an 8 × 8 grid of yes/no cells                (later phase)
+var letter: char                // e.g. 'q'
+var name: string                // e.g. "kayak"
+var row: [int[1..=9]; 9]        // nine digits, each from 1 to 9
+var board: [[bool; 8]; 8]       // an 8 × 8 grid of yes/no cells
 
-enum Color { Red, Green, Blue }                                              // (later phase)
+enum Color { Red, Green, Blue }
 var paint: Color
 
-struct Point { x: int, y: int }                                              // (later phase)
+struct Point { x: int, y: int }
 var corner: Point
 ```
 
@@ -337,15 +353,50 @@ bounds, the program correctly has no solution.
 **Annotations are optional by default.** `var x, y` followed by `x * y == n` makes both `int`.
 The `explicit-types` compiler option (§6.3) can require them.
 
-Operators (strawman): arithmetic `+ - * / % ^`(power with concrete exponent); comparison
-`== != < <= > >=`; logic `and or not xor implies iff`; bitwise on non-negative integers
-`& | ~ << >>`; ranges `a..b` (exclusive) and `a..=b` (inclusive); comprehensions
-`sum(e for i in r if c)`, `all(…)`, `any(…)`, `count(…)`.
+**Values of the composite types:**
+- arrays: `[1, 2, 3]`, `[i * i for i in 1..=5 if i != 3]`, indexed as `grid[r][c]` (the
+  index may be unknown);
+- enums: `Color.Red`, compared with `==` and `!=`;
+- structs: `Point(x: 1, y: 2)` or `Point(1, 2)`, with fields read and assigned as `p.x`;
+- characters: `'a'`; strings: `"text"`, with `len(s)`, `s[i]`, `s + t` and `reverse(s)`.
+
+**Strings with unknown parts** have a *capacity*: the largest length declared in
+`string[lo..=hi]`, or 32 for a plain `string` (with a warning). Their length is an unknown in
+`lo..=hi`. Positions beyond the length hold `'\0'` and positions before it never do, so every
+string has exactly one representation and string equality is position-wise equality.
+
+**Operators:**
+- arithmetic: `+ - * / % ^` (the exponent of `^` must be known);
+- comparison: `== != < <= > >=`, on integers and characters (`==` on every type);
+- membership: `x in lo..hi`, `x in array`, `c in string`;
+- logic: `and or not xor implies iff`;
+- bitwise, on two's-complement integers: `& | xor << >>` (shift amounts must be known);
+- ranges: `a..b` (exclusive) and `a..=b` (inclusive).
+
+**Built-in functions:**
+
+| Function | Meaning |
+|---|---|
+| `abs(x)`, `min(a, b, …)`, `max(a, b, …)` | the usual, on integers |
+| `len(xs)` | length of an array or string |
+| `sum(xs)`, `count(bs)` | the sum of integers; the number of `true` values |
+| `all(bs)`, `any(bs)` | every / some value is `true` |
+| `min(xs)`, `max(xs)` | the smallest / largest element |
+| `all_different(xs)` | no two elements are equal |
+| `reverse(xs)` | an array or string, reversed |
+| `ord(c)`, `chr(n)` | a character's code; the character with a code |
+
+Each function that takes a collection also accepts a comprehension directly, with optional
+filters: `sum(w[i] for i in 0..n if take[i])`. A filter that depends on unknowns turns into a
+condition on each element. This is why array comprehensions (`[… for …]`) reject such filters:
+their length would depend on the unknowns.
 
 Division and remainder are **Euclidean**: the remainder always lies in `0..|m|`, so
-`-7 / 2 == -4` and `-7 % 2 == 1`. On unknowns (a later phase), they are encoded *relationally*:
-`q = a / b` becomes fresh unknowns with `q*b + r == a, 0 <= r < |b|`, so no division circuit is
-ever needed.
+`-7 / 2 == -4` and `-7 % 2 == 1`. On unknowns they are encoded *relationally*: `a / b` and
+`a % b` share a fresh quotient `q` and remainder `r` with `q*b + r == a` and `0 <= r < |b|`, so
+no division circuit is needed (powers of two are plain bit slices). Dividing by an unknown adds
+the requirement that it is not zero; inside the circuit, division is made total
+(`a / 0 = 0`), so the definitions stay valid even in branches that are never taken.
 
 ### 4.5 Integer widths: inferred, exact, never overflowing
 
@@ -414,10 +465,12 @@ solve [all | unique] <vars> [limit K] [minimize <expr> | maximize <expr>] [{ bod
   `[n]ext · [a]ll · [q]uit`.
 - **Don't-cares.** If a listed variable is not constrained at all, the solver picks an
   arbitrary value; RedSAT flags it as *unconstrained* in the default output.
-- **Several `solve` statements (later).** Constraints accumulate; each `solve` sees everything
-  required so far and reuses the solver incrementally. This turns the concrete level into a
-  scripting language that can drive the solver, e.g. a puzzle generator that removes clues as
-  long as the solution stays `unique`.
+- **Several `solve` statements.** Constraints accumulate: each `solve` sees *everything*
+  required so far, not just the requirements written since the previous `solve`. Concrete code
+  between solves can therefore drive the solver, e.g. a puzzle generator that removes clues as
+  long as the solution stays `unique`. The flip side: a file holding two unrelated problems
+  will see the first problem's constraints while solving the second. A contradiction in the
+  first then makes the second report `no solution`.
 
 ### 4.7 Explaining "no solution"
 
@@ -636,8 +689,8 @@ var n = 42              // ok: the initializer determines the type
 | 0 ✅  | AIG, Tseitin/PG encoder, DIMACS I/O, `Solver` trait + CaDiCaL, exact unsigned gadgets          | factoring via hand-built circuit |
 | 1 ✅  | lexer, parser, type inference, `var`/`require`/`solve`/`print`, bool + int with inferred widths, signed gadgets, compile-time `for`/`if`, **symbolic `if`** (pulled forward), `solve all/unique/limit`, **`minimize`/`maximize`** (pulled forward), `redsat.toml` + strict mode, VS Code grammar + Markdown fences + snippets | factoring, triples, logic puzzles in `.rsat` |
 | 2     | language server: live diagnostics, autocomplete, hovers with inferred domains and widths       | editor intelligence             |
-| 3     | arrays, functions, comprehensions, stdlib (`all_different`, `sum`, `count`), cardinality encodings | N-Queens, cryptarithms, graph colouring |
-| 4     | `/` `%` on unknowns, bitwise ops, chars, strings, enums, structs                               | string puzzles, scheduling      |
+| 3 ✅  | arrays (unknown indices too), functions with early returns, comprehensions, built-ins (`all_different`, `sum`, `count`, …), `in`, `if` expressions, bounded `while` | N-Queens, cryptarithms, Sudoku, magic squares |
+| 4 ✅  | `/` `%` on unknowns, bitwise ops, chars, strings with unknown lengths, enums, structs           | palindromes, graph colouring, scheduling |
 | 5     | interactive mode, UNSAT explanations, incremental multiple `solve`s, binary-search optimization | puzzle generation               |
 | 6     | optimiser: encoding selection, symmetry breaking, CSE; benchmark suite                           | performance                     |
 | 7     | REPL, built-in CDCL solver                                                                      | stretch                         |

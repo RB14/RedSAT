@@ -1,0 +1,10 @@
+// Reading and writing arrays at positions that are themselves unknown.
+var values = [10, 20, 30, 40]
+var i, j: int[0..=3]
+require values[i] + values[j] == 50 and i < j
+solve all i, j
+var slots: [int[0..=9]; 4]
+var k: int[0..=3]
+slots[k] = 7
+require slots == [1, 2, 7, 4]
+solve k, slots

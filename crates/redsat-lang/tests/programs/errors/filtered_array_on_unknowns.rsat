@@ -1,0 +1,2 @@
+var take: [bool; 3]
+var chosen = [i for i in 0..3 if take[i]]

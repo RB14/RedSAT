@@ -1,0 +1,6 @@
+fn down(n: int) -> int {
+    if n == 0 { return 0 }
+    return down(n - 1)
+}
+var x: int[0..=5]
+require down(x) == 0

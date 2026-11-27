@@ -151,7 +151,7 @@ fn report(source: &SourceFile, diagnostics: &[Diagnostic]) {
 fn run(file: &Path, args: &OptionArgs, stats: bool) -> Result<ExitCode, Box<dyn Error>> {
     let (source, options) = prepare(file, args)?;
     let factory = || Box::new(Cadical::new()) as Box<dyn Solver>;
-    let mut out = io::stdout().lock();
+    let mut out = io::stdout();
     let outcome = redsat_lang::run(&source, &options, &factory, &mut out);
     out.flush()?;
     report(&source, &outcome.diagnostics);

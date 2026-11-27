@@ -1,0 +1,6 @@
+error: `sign` might end without returning a value
+ --> missing_return.rsat:1:4
+  |
+1 | fn sign(x: int) -> int {
+  |    ^^^^
+  = help: make sure every path through the function ends with `return …`

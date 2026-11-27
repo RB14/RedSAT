@@ -1,0 +1,6 @@
+error: `Point` has no field `z`
+ --> unknown_field.rsat:3:9
+  |
+3 | print p.z
+  |         ^
+  = help: its fields are x, y

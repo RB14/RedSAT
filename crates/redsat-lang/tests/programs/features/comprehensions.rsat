@@ -1,0 +1,9 @@
+var xs = [4, 8, 15, 16, 23, 42]
+print sum(xs), min(xs), max(xs), count(x % 2 == 0 for x in xs), all(x > 0 for x in xs), any(x > 40 for x in xs)
+print [x * 2 for x in xs if x < 16], [[i, j] for i in 1..=2 for j in 1..=2 if i != j], 15 in xs
+var pick: [bool; 6]
+require sum(xs[i] for i in 0..6 if pick[i]) == 47
+require count(pick) == 3
+solve all pick {
+    print [xs[i] for i in 0..6 if pick[i]]
+}

@@ -1,0 +1,6 @@
+error: this loop's condition depends on unknowns
+ --> while_without_bound.rsat:2:7
+  |
+2 | while n > 1 {
+  |       ^^^^^
+  = help: add a maximum number of iterations: `while … bound 100 { … }`

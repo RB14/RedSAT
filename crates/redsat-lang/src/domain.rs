@@ -257,8 +257,86 @@ fn forward(store: &TermStore, term: &Term, ranges: &[Interval]) -> Interval {
         Term::Mul(a, b) if a == b => of(*a).square(),
         Term::Mul(a, b) => of(*a).mul(of(*b)),
         Term::Ite(_, a, b) => of(*a).hull(of(*b)),
+        Term::Div(a, b) => div_range(of(*a), of(*b)),
+        Term::Mod(a, b) => mod_range(of(*a), of(*b)),
+        Term::BitAnd(a, b) => bitwise_range(of(*a), of(*b), true),
+        Term::BitOr(a, b) | Term::BitXor(a, b) => bitwise_range(of(*a), of(*b), false),
         _ => Interval::full(), // boolean terms carry no integer range
     }
+}
+
+/// The largest absolute value in a bounded interval.
+fn magnitude(range: &Interval) -> Option<BigInt> {
+    let (lo, hi) = range.bounds()?;
+    Some(lo.abs().max(hi.abs()))
+}
+
+/// A range for the Euclidean quotient `a / b`: never larger in magnitude than `a`.
+pub(crate) fn div_range(a: &Interval, b: &Interval) -> Interval {
+    let Some(limit) = magnitude(a) else {
+        return Interval::full();
+    };
+    let mut range = Interval::new(-limit.clone(), limit);
+    if let (Ext::Fin(a_lo), Ext::Fin(b_lo)) = (&a.lo, &b.lo) {
+        if !a_lo.is_negative() && b_lo.is_positive() {
+            // Both non-negative: plain floor division, largest for the smallest divisor.
+            let hi = match &a.hi {
+                Ext::Fin(a_hi) => Ext::Fin(a_hi.div_floor(b_lo)),
+                other => other.clone(),
+            };
+            range = range.intersect(&Interval {
+                lo: Ext::Fin(BigInt::zero()),
+                hi,
+            });
+        }
+    }
+    range
+}
+
+/// A range for the Euclidean remainder `a % b`: in `0..|b|`, or `a` itself when `b` may be 0.
+pub(crate) fn mod_range(a: &Interval, b: &Interval) -> Interval {
+    let mut range = match magnitude(b) {
+        Some(limit) if limit.is_positive() => Interval::new(BigInt::zero(), limit - 1),
+        Some(_) => Interval::point(BigInt::zero()),
+        None => Interval {
+            lo: Ext::Fin(BigInt::zero()),
+            hi: Ext::PosInf,
+        },
+    };
+    if let Ext::Fin(a_lo) = &a.lo {
+        if !a_lo.is_negative() {
+            range = range.intersect(&Interval {
+                lo: Ext::NegInf,
+                hi: a.hi.clone(),
+            });
+        }
+    }
+    if b.contains_zero() {
+        range.hull(a)
+    } else {
+        range
+    }
+}
+
+/// A range for a bitwise operation: the combined two's-complement range of the operands (and,
+/// for `&` on non-negative operands, at most the smaller operand).
+pub(crate) fn bitwise_range(a: &Interval, b: &Interval, is_and: bool) -> Interval {
+    let (Some((a_lo, a_hi)), Some((b_lo, b_hi))) = (a.bounds(), b.bounds()) else {
+        return Interval::full();
+    };
+    let la = redsat_circuit::Layout::for_range(a_lo, a_hi);
+    let lb = redsat_circuit::Layout::for_range(b_lo, b_hi);
+    if !la.signed && !lb.signed {
+        if is_and {
+            return Interval::new(BigInt::zero(), a_hi.clone().min(b_hi.clone()));
+        }
+        let width = la.width.max(lb.width);
+        return Interval::new(BigInt::zero(), (BigInt::from(1) << width) - 1);
+    }
+    let effective = |layout: redsat_circuit::Layout| layout.width + usize::from(!layout.signed);
+    let width = effective(la).max(effective(lb));
+    let half = BigInt::from(1) << (width - 1);
+    Interval::new(-half.clone(), half - 1)
 }
 
 /// The maximum number of propagation rounds. Each round costs time linear in the program size,

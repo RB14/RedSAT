@@ -253,6 +253,47 @@ pub fn ite_in(aig: &mut Aig, cond: Edge, a: &IntVec, b: &IntVec, layout: Layout)
     IntVec::from_bits(bits, layout.signed)
 }
 
+/// A bitwise operation on two's-complement integers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BitOp {
+    /// `a & b`
+    And,
+    /// `a | b`
+    Or,
+    /// `a xor b`
+    Xor,
+}
+
+/// `a op b` bit by bit, on the operands' implicit (sign-)extensions, in the given layout.
+pub fn bitwise_in(aig: &mut Aig, op: BitOp, a: &IntVec, b: &IntVec, layout: Layout) -> IntVec {
+    let bits = (0..layout.width)
+        .map(|i| {
+            let (x, y) = (a.bit(i), b.bit(i));
+            match op {
+                BitOp::And => aig.and(x, y),
+                BitOp::Or => aig.or(x, y),
+                BitOp::Xor => aig.xor(x, y),
+            }
+        })
+        .collect();
+    IntVec::from_bits(bits, layout.signed)
+}
+
+/// `⌊a / 2^k⌋` (an arithmetic shift right), in the given layout. No gates are needed.
+#[must_use]
+pub fn shr_floor(a: &IntVec, k: usize, layout: Layout) -> IntVec {
+    IntVec::from_bits(
+        (0..layout.width).map(|i| a.bit(i + k)).collect(),
+        layout.signed,
+    )
+}
+
+/// `a mod 2^k` (always non-negative): the low `k` bits, as an unsigned vector.
+#[must_use]
+pub fn low_bits(a: &IntVec, k: usize) -> IntVec {
+    IntVec::from_bits((0..k).map(|i| a.bit(i)).collect(), false)
+}
+
 // ---------------------------------------------------------------------------------------------
 // Exact arithmetic: the result layout covers every possible value
 // ---------------------------------------------------------------------------------------------
@@ -579,6 +620,39 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn bitwise_and_shifts_match_twos_complement() {
+        for_all_operands(
+            |aig, a, b| {
+                let layout = Layout {
+                    width: 5,
+                    signed: true,
+                };
+                [
+                    bitwise_in(aig, BitOp::And, a, b, layout),
+                    bitwise_in(aig, BitOp::Or, a, b, layout),
+                    bitwise_in(aig, BitOp::Xor, a, b, layout),
+                    shr_floor(
+                        a,
+                        1,
+                        Layout {
+                            width: 4,
+                            signed: true,
+                        },
+                    ),
+                    low_bits(a, 2),
+                ]
+            },
+            |va, vb, [and, or, xor, half, low], sim| {
+                assert_eq!(value(and, sim), va & vb, "{va} & {vb}");
+                assert_eq!(value(or, sim), va | vb, "{va} | {vb}");
+                assert_eq!(value(xor, sim), va ^ vb, "{va} ^ {vb}");
+                assert_eq!(value(half, sim), va.div_euclid(2), "{va} / 2");
+                assert_eq!(value(low, sim), va.rem_euclid(4), "{va} % 4");
+            },
+        );
     }
 
     #[test]

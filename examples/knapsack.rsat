@@ -1,0 +1,19 @@
+// Knapsack: choose items to carry, maximizing their total value without exceeding the
+// backpack's weight limit.
+//
+// One yes/no unknown per item. The filtered sums `… if take[i]` depend on unknowns, so they
+// compile to "weight if taken, otherwise 0".
+
+var names    = ["map", "compass", "water", "sandwich", "glucose", "tin", "banana", "apple"]
+var weight   = [9, 13, 153, 50, 15, 68, 27, 39]
+var value    = [150, 35, 200, 160, 60, 45, 60, 40]
+var capacity = 200
+var n = len(names)
+var take: [bool; n]
+
+require sum(weight[i] for i in 0..n if take[i]) <= capacity
+
+solve take maximize sum(value[i] for i in 0..n if take[i]) {
+    print "take: {[names[i] for i in 0..n if take[i]]}"
+    print "weight {sum(weight[i] for i in 0..n if take[i])} of {capacity}, value {sum(value[i] for i in 0..n if take[i])}"
+}

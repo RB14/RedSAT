@@ -102,6 +102,13 @@ pub enum Term {
     Add(TermId, TermId),
     Sub(TermId, TermId),
     Mul(TermId, TermId),
+    /// Euclidean division; `x / 0 = 0`.
+    Div(TermId, TermId),
+    /// Euclidean remainder, always in `0..|divisor|`; `x % 0 = x`.
+    Mod(TermId, TermId),
+    BitAnd(TermId, TermId),
+    BitOr(TermId, TermId),
+    BitXor(TermId, TermId),
     Eq(TermId, TermId),
     Lt(TermId, TermId),
     Le(TermId, TermId),
@@ -120,12 +127,42 @@ impl Term {
             | Self::Add(a, b)
             | Self::Sub(a, b)
             | Self::Mul(a, b)
+            | Self::Div(a, b)
+            | Self::Mod(a, b)
+            | Self::BitAnd(a, b)
+            | Self::BitOr(a, b)
+            | Self::BitXor(a, b)
             | Self::Eq(a, b)
             | Self::Lt(a, b)
             | Self::Le(a, b) => vec![a, b],
             Self::Ite(c, a, b) => vec![c, a, b],
         }
     }
+}
+
+/// A bitwise operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BitOp {
+    /// `&`
+    And,
+    /// `|`
+    Or,
+    /// `xor` on integers
+    Xor,
+}
+
+/// Euclidean division: `a == q * b + r` with `0 <= r < |b|`. Division by zero is defined as
+/// `(0, a)`, which keeps the operation total (the language rejects it separately).
+#[must_use]
+pub fn euclid(a: &BigInt, b: &BigInt) -> (BigInt, BigInt) {
+    use num_integer::Integer;
+    use num_traits::Signed;
+    if b.is_zero() {
+        return (BigInt::zero(), a.clone());
+    }
+    let r = a.mod_floor(&b.abs());
+    let q = (a - &r) / b;
+    (q, r)
 }
 
 /// A declared unknown.
@@ -288,6 +325,7 @@ impl TermStore {
             (Some(true), _) => b,
             (_, Some(true)) => a,
             _ if a == b => a,
+            _ if self.are_complements(a, b) => self.bool(false),
             _ => self.intern(Term::And(a, b), Sort::Bool),
         }
     }
@@ -300,6 +338,7 @@ impl TermStore {
             (Some(false), _) => b,
             (_, Some(false)) => a,
             _ if a == b => a,
+            _ if self.are_complements(a, b) => self.bool(true),
             _ => self.intern(Term::Or(a, b), Sort::Bool),
         }
     }
@@ -316,6 +355,54 @@ impl TermStore {
             _ if a == b => self.bool(false),
             _ => self.intern(Term::Xor(a, b), Sort::Bool),
         }
+    }
+
+    fn are_complements(&self, a: TermId, b: TermId) -> bool {
+        matches!(self.term(a), Term::Not(x) if *x == b)
+            || matches!(self.term(b), Term::Not(x) if *x == a)
+    }
+
+    /// `a / b` (Euclidean; `a / 0 = 0`).
+    pub fn div(&mut self, a: TermId, b: TermId) -> TermId {
+        match (self.int_of(a), self.int_of(b)) {
+            (Some(x), Some(y)) => {
+                let quotient = euclid(x, y).0;
+                self.int(quotient)
+            }
+            (_, Some(y)) if y.is_one() => a,
+            _ => self.intern(Term::Div(a, b), Sort::Int),
+        }
+    }
+
+    /// `a % b` (Euclidean; `a % 0 = a`).
+    pub fn rem(&mut self, a: TermId, b: TermId) -> TermId {
+        match (self.int_of(a), self.int_of(b)) {
+            (Some(x), Some(y)) => {
+                let remainder = euclid(x, y).1;
+                self.int(remainder)
+            }
+            (_, Some(y)) if y.is_one() => self.int(BigInt::zero()),
+            _ => self.intern(Term::Mod(a, b), Sort::Int),
+        }
+    }
+
+    /// Bitwise `a & b`, `a | b` or `a xor b` on two's-complement integers.
+    pub fn bitwise(&mut self, op: BitOp, a: TermId, b: TermId) -> TermId {
+        let (a, b) = (a.min(b), a.max(b));
+        if let (Some(x), Some(y)) = (self.int_of(a), self.int_of(b)) {
+            let value = match op {
+                BitOp::And => x & y,
+                BitOp::Or => x | y,
+                BitOp::Xor => x ^ y,
+            };
+            return self.int(value);
+        }
+        let term = match op {
+            BitOp::And => Term::BitAnd(a, b),
+            BitOp::Or => Term::BitOr(a, b),
+            BitOp::Xor => Term::BitXor(a, b),
+        };
+        self.intern(term, Sort::Int)
     }
 
     /// `a implies b`.
@@ -466,6 +553,11 @@ impl TermStore {
                 Term::Add(a, b) => Constant::Int(int(*a) + int(*b)),
                 Term::Sub(a, b) => Constant::Int(int(*a) - int(*b)),
                 Term::Mul(a, b) => Constant::Int(int(*a) * int(*b)),
+                Term::Div(a, b) => Constant::Int(euclid(int(*a), int(*b)).0),
+                Term::Mod(a, b) => Constant::Int(euclid(int(*a), int(*b)).1),
+                Term::BitAnd(a, b) => Constant::Int(int(*a) & int(*b)),
+                Term::BitOr(a, b) => Constant::Int(int(*a) | int(*b)),
+                Term::BitXor(a, b) => Constant::Int(int(*a) ^ int(*b)),
                 Term::Eq(a, b) => Constant::Bool(int(*a) == int(*b)),
                 Term::Lt(a, b) => Constant::Bool(int(*a) < int(*b)),
                 Term::Le(a, b) => Constant::Bool(int(*a) <= int(*b)),

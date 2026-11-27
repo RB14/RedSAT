@@ -6,13 +6,16 @@
 
 use std::collections::BTreeSet;
 
-use redsat_lang::syntax::{BUILTIN_FUNCTIONS, BUILTIN_TYPES, KEYWORDS, SOLVE_MODIFIERS};
+use redsat_lang::syntax::{BUILTIN_FUNCTIONS, BUILTIN_TYPES, CONTEXTUAL_KEYWORDS, KEYWORDS};
 use serde_json::Value;
 
 /// Every word listed in a plain alternation group, such as `(?:if|else)` or `(bool|int)`,
 /// anywhere in the grammar's regular expressions.
 fn grammar_words() -> BTreeSet<String> {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../editors/vscode/syntaxes/rsat.tmLanguage.json");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../editors/vscode/syntaxes/rsat.tmLanguage.json"
+    );
     let text = std::fs::read_to_string(path).expect("the VS Code grammar exists");
     let json: Value = serde_json::from_str(&text).expect("the grammar is valid JSON");
     let mut words = BTreeSet::new();
@@ -51,21 +54,38 @@ fn alternation_words(regex: &str, words: &mut BTreeSet<String>) {
 }
 
 fn language_words() -> BTreeSet<String> {
-    [KEYWORDS, SOLVE_MODIFIERS, BUILTIN_TYPES, BUILTIN_FUNCTIONS]
-        .into_iter()
-        .flatten()
-        .map(|word| (*word).to_string())
-        .collect()
+    [
+        KEYWORDS,
+        CONTEXTUAL_KEYWORDS,
+        BUILTIN_TYPES,
+        BUILTIN_FUNCTIONS,
+    ]
+    .into_iter()
+    .flatten()
+    .map(|word| (*word).to_string())
+    .collect()
 }
 
 #[test]
 fn the_grammar_highlights_every_word_of_the_language() {
-    let missing: Vec<_> = language_words().difference(&grammar_words()).cloned().collect();
-    assert!(missing.is_empty(), "the VS Code grammar does not know: {missing:?}");
+    let missing: Vec<_> = language_words()
+        .difference(&grammar_words())
+        .cloned()
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "the VS Code grammar does not know: {missing:?}"
+    );
 }
 
 #[test]
 fn the_grammar_highlights_no_word_the_language_lacks() {
-    let extra: Vec<_> = grammar_words().difference(&language_words()).cloned().collect();
-    assert!(extra.is_empty(), "the VS Code grammar highlights unknown words: {extra:?}");
+    let extra: Vec<_> = grammar_words()
+        .difference(&language_words())
+        .cloned()
+        .collect();
+    assert!(
+        extra.is_empty(),
+        "the VS Code grammar highlights unknown words: {extra:?}"
+    );
 }

@@ -1,0 +1,19 @@
+// The smallest four-digit multiple of 7 whose digits add up to 30.
+//
+// The loop runs on an unknown number, so its condition depends on unknowns: `bound 4` says
+// it never needs more than four iterations, and each iteration is encoded as a guarded step.
+// `/` and `%` on unknowns are encoded as constraints on a fresh quotient and remainder.
+
+var n: int[1000..=9999]
+
+var digit_sum = 0
+var rest = n
+while rest > 0 bound 4 {
+    digit_sum = digit_sum + rest % 10
+    rest = rest / 10
+}
+
+require digit_sum == 30
+require n % 7 == 0
+
+solve n minimize n

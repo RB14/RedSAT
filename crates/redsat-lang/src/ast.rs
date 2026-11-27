@@ -1,5 +1,7 @@
 //! The abstract syntax tree produced by the parser.
 
+use std::rc::Rc;
+
 use num_bigint::BigInt;
 
 use crate::source::Span;
@@ -13,7 +15,7 @@ pub struct Program {
     pub num_decls: usize,
 }
 
-/// Identifies one declared name (`var x, y` declares two).
+/// Identifies one declared variable name (`var x, y` declares two).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DeclId(pub usize);
 
@@ -49,10 +51,10 @@ pub struct Stmt {
 pub enum StmtKind {
     /// `var a, b: T = init`
     Var(VarDecl),
-    /// `name = value`
+    /// `place = value`, e.g. `x = 1`, `grid[r][c] = 0`, `p.x = 3`
     Assign {
-        /// The variable assigned to.
-        target: Ident,
+        /// What is assigned to.
+        target: Place,
         /// The new value.
         value: Expr,
     },
@@ -69,17 +71,65 @@ pub enum StmtKind {
         /// Executed otherwise (an `else if` is an `else` block holding one `if`).
         else_block: Option<Block>,
     },
-    /// `for name in range { … }`
+    /// `for name in iterable { … }`
     For {
         /// The loop variable.
         var: Ident,
-        /// The values it takes.
-        range: Range,
+        /// What it ranges over.
+        iter: Iterable,
+        /// The loop body.
+        body: Block,
+    },
+    /// `while cond bound K { … }`
+    While {
+        /// The loop condition.
+        cond: Expr,
+        /// The maximum number of iterations, required when `cond` depends on unknowns.
+        bound: Option<Expr>,
         /// The loop body.
         body: Block,
     },
     /// `solve …`
     Solve(Solve),
+    /// `fn name(params) -> T { … }`
+    Fn(Rc<FnDecl>),
+    /// `return` or `return value`
+    Return(Option<Expr>),
+    /// A call used as a statement, e.g. `ordered(xs)`.
+    Expr(Expr),
+    /// `enum Name { A, B, … }`
+    Enum(EnumDecl),
+    /// `struct Name { field: T, … }`
+    Struct(StructDecl),
+}
+
+/// An assignable location: a variable followed by indexing and field accesses.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Place {
+    /// The variable.
+    pub root: Ident,
+    /// The accesses applied to it, in order.
+    pub path: Vec<Access>,
+    /// The whole place.
+    pub span: Span,
+}
+
+/// One step of a [`Place`].
+#[derive(Clone, Debug, PartialEq)]
+pub enum Access {
+    /// `[index]`
+    Index(Expr),
+    /// `.field`
+    Field(Ident),
+}
+
+/// What a `for` loop or comprehension clause ranges over.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Iterable {
+    /// `lo..hi` or `lo..=hi`
+    Range(Range),
+    /// An array or a string.
+    Expr(Expr),
 }
 
 /// `var a, b: T = init`
@@ -91,6 +141,46 @@ pub struct VarDecl {
     pub ty: Option<TypeExpr>,
     /// The initial value, if any (only allowed with a single name).
     pub init: Option<Expr>,
+}
+
+/// `fn name(params) -> T { body }`
+#[derive(Clone, Debug, PartialEq)]
+pub struct FnDecl {
+    /// The function's name.
+    pub name: Ident,
+    /// Its parameters.
+    pub params: Vec<Param>,
+    /// Its result type; `None` for a function that returns nothing.
+    pub ret: Option<TypeExpr>,
+    /// Its body.
+    pub body: Block,
+}
+
+/// A function parameter.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Param {
+    /// The parameter name.
+    pub name: Ident,
+    /// Its type.
+    pub ty: TypeExpr,
+}
+
+/// `enum Name { A, B, … }`
+#[derive(Clone, Debug, PartialEq)]
+pub struct EnumDecl {
+    /// The enum's name.
+    pub name: Ident,
+    /// Its variants, in order.
+    pub variants: Vec<Ident>,
+}
+
+/// `struct Name { field: T, … }`
+#[derive(Clone, Debug, PartialEq)]
+pub struct StructDecl {
+    /// The struct's name.
+    pub name: Ident,
+    /// Its fields, in order.
+    pub fields: Vec<(Ident, TypeExpr)>,
 }
 
 /// A type annotation.
@@ -116,6 +206,14 @@ pub enum TypeKind {
         /// `N`.
         bits: Box<Expr>,
     },
+    /// `char`
+    Char,
+    /// `string` or `string[lo..=hi]` (a range of lengths)
+    Str(Option<Range>),
+    /// `[T; N]` or `[T]` (any length, for parameters)
+    Array(Box<TypeExpr>, Option<Box<Expr>>),
+    /// An enum or struct name.
+    Named(Ident),
 }
 
 /// `lo..hi` or `lo..=hi`.
@@ -136,7 +234,7 @@ pub struct Range {
 pub struct Solve {
     /// Which solutions to look for.
     pub mode: SolveMode,
-    /// What to solve for (the projection); empty means "every unknown".
+    /// What to solve for (the projection); empty means "every unknown in scope".
     pub targets: Vec<Expr>,
     /// `limit K`.
     pub limit: Option<Expr>,
@@ -184,16 +282,55 @@ pub enum ExprKind {
     Int(BigInt),
     /// `true` or `false`.
     Bool(bool),
+    /// A character literal.
+    Char(char),
     /// A string literal, split into text and interpolated `{…}` expressions.
     Str(Vec<StrPart>),
-    /// A variable.
+    /// A variable (or an enum/struct name in `Color.Red` / `Point(…)`).
     Var(Ident),
     /// `-e` or `not e`.
     Unary(UnaryOp, Box<Expr>),
     /// `a op b`.
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
-    /// `f(a, b, …)`.
-    Call(Ident, Vec<Expr>),
+    /// `f(a, b, …)` or `Point(x: 1, y: 2)`.
+    Call(Ident, Vec<Arg>),
+    /// `a[i]`.
+    Index(Box<Expr>, Box<Expr>),
+    /// `p.x` (also `Color.Red`).
+    Field(Box<Expr>, Ident),
+    /// `[a, b, c]`.
+    Array(Vec<Expr>),
+    /// `[e for …]` (no function) or `f(e for …)`.
+    Comprehension {
+        /// The aggregating function, or `None` for an array comprehension.
+        func: Option<Ident>,
+        /// The element expression.
+        body: Box<Expr>,
+        /// `for … in …` and `if …` clauses, in order.
+        clauses: Vec<Clause>,
+    },
+    /// `x in lo..hi` or `x in array`.
+    In(Box<Expr>, Box<Iterable>),
+    /// `if cond { a } else { b }` used as a value.
+    If(Box<Expr>, Box<Expr>, Box<Expr>),
+}
+
+/// A call argument, optionally named (`Point(x: 1, y: 2)`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Arg {
+    /// The name, for struct constructors.
+    pub name: Option<Ident>,
+    /// The value.
+    pub value: Expr,
+}
+
+/// A comprehension clause.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Clause {
+    /// `for var in iterable`
+    For(Ident, Iterable),
+    /// `if condition`
+    If(Expr),
 }
 
 /// A piece of a string literal.
@@ -224,6 +361,10 @@ pub enum BinaryOp {
     Div,
     Mod,
     Pow,
+    BitAnd,
+    BitOr,
+    Shl,
+    Shr,
     Eq,
     Ne,
     Lt,
@@ -248,6 +389,10 @@ impl BinaryOp {
             Self::Div => "/",
             Self::Mod => "%",
             Self::Pow => "^",
+            Self::BitAnd => "&",
+            Self::BitOr => "|",
+            Self::Shl => "<<",
+            Self::Shr => ">>",
             Self::Eq => "==",
             Self::Ne => "!=",
             Self::Lt => "<",

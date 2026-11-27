@@ -1,0 +1,6 @@
+error: an array comprehension cannot filter on unknowns: its length would depend on them
+ --> filtered_array_on_unknowns.rsat:2:14
+  |
+2 | var chosen = [i for i in 0..3 if take[i]]
+  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = help: aggregate with `sum`, `count`, `all` or `any`, or move the condition into the element

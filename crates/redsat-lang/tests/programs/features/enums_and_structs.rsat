@@ -1,0 +1,10 @@
+enum Suit { Hearts, Spades }
+struct Card { rank: int[1..=13], suit: Suit }
+var hand: [Card; 2]
+require hand[0].suit != hand[1].suit
+require hand[0].rank + hand[1].rank == 3 and hand[0].rank < hand[1].rank
+require hand[0].suit == Suit.Spades
+solve all hand
+var p = Card(rank: 12, suit: Suit.Hearts)
+p.rank = 13
+print p, p == Card(13, Suit.Hearts)

@@ -1,0 +1,6 @@
+// Constraints accumulate: each `solve` sees everything required so far.
+var x: int[0..=9]
+require x > 6
+solve all x
+require x % 2 == 0
+solve all x

@@ -1,0 +1,13 @@
+// Symbolic division, remainder and bitwise operators agree with the known-value definitions.
+var x: int[-10..=10]
+require x / 3 == -2 and x % 3 == 1
+solve all x
+print -5 / 3, -5 % 3
+var y: int[-8..=7]
+require (y & 3) == 1 and y < 0
+solve all y
+print -7 & 3, -3 & 3, (6 | 9) xor 5, 1 << 5, -9 >> 2
+var d: int[-4..=4]
+var safe = if d != 0 { 12 / d } else { 0 }
+require safe == -3
+solve all d

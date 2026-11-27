@@ -1,0 +1,23 @@
+// Early returns under conditions that depend on unknowns, recursion on known values, and a
+// procedure that adds requirements.
+fn clamp(v: int, lo: int, hi: int) -> int {
+    if v < lo { return lo }
+    if v > hi { return hi }
+    return v
+}
+fn fib(n: int) -> int {
+    if n < 2 { return n }
+    return fib(n - 1) + fib(n - 2)
+}
+fn ascending(xs: [int]) {
+    for i in 1..len(xs) {
+        require xs[i - 1] < xs[i]
+    }
+}
+var x: int[-20..=20]
+require clamp(x, 0, 10) == 10 and x < 13
+solve all x
+var digits: [int[0..=9]; 3]
+ascending(digits)
+require sum(digits) == fib(7)
+solve all digits limit 4

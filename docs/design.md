@@ -511,6 +511,37 @@ How it works:
 - A "no solution" that holds only within an iterative-deepening bound is not explained,
   because it is not a proof.
 
+### 4.8 Functions, imports and the standard library
+
+**Functions are inlined.** A call elaborates the function's body with the arguments bound to
+its parameters. Known arguments are computed directly; unknown ones flow into the circuit.
+Multi-statement bodies, local variables, loops and early `return`s under unknown conditions
+work. They are merged through the same guards as a symbolic `if` (§4.3). Recursion is allowed
+when it stops on values known at compile time (`gcd(84, 36)`); calls nested more than 200 deep
+are an error that points back through the call chain.
+
+**Imports.** `import "path.rsat"` brings in another file's functions, enums and structs. Paths
+are relative to the importing file, imports are transitive, and each file is loaded once. An
+imported file may only *declare* things: running statements there would make the meaning of
+`import` depend on the order of imports. All files share one offset space, so every
+diagnostic shows the right file.
+
+**The standard library is written in RedSAT.** `prelude.rsat` is loaded before every program.
+It holds helpers such as `digits`, `sorted` (an odd–even transposition network, which works on
+unknowns), `lex_less`, `exactly`, `is_permutation` and string helpers. Only what needs the
+compiler's help stays native: `sum`, `count`, `all_different`, `len`, `min`/`max`, `ord`/`chr`
+and the like. Your own function with a standard-library name shadows it, so adding to the
+library never breaks a program.
+
+**No macros.** A macro system earns its keep where functions cannot reach: generating code
+from compile-time values, avoiding call overhead, or abstracting over syntax. RedSAT functions
+already do the first two. They are expanded at compile time, run on compile-time values like
+any macro, and leave no call at run time. Inlining also makes them hygienic for free: a
+function's locals cannot capture the caller's names. The remaining case, new syntax, would cost
+error messages and tooling (the language server and the playground both understand functions)
+for little gain. So there are no macros for now; if a pattern keeps appearing that functions
+cannot express, it should become a language feature or a library function instead.
+
 ## 5. Compiler architecture
 
 ```text
@@ -538,11 +569,14 @@ How it works:
 |------------------|-----------------------------------------------------------------------------|-------|
 | `redsat-sat`     | variables, literals, CNF, DIMACS I/O, the `Solver` trait, solver backends   | 0     |
 | `redsat-circuit` | And-Inverter Graph, CNF encoder, exact bit-vector gadgets, circuit solving  | 0     |
-| `redsat-lang`    | lexer, parser, AST, inference, elaboration, word-level IR, bit-blasting     | 1     |
-| `redsat-cli`     | the `redsat` command-line tool                                              | 0+    |
+| `redsat-lang`    | lexer, parser, AST, inference, elaboration, word-level IR, bit-blasting, the standard library prelude, loading imports | 1 |
+| `redsat-lsp`     | the language server (`redsat lsp`)                                          | 2     |
+| `redsat-cli`     | the `redsat` command-line tool and REPL                                     | 0+    |
+| `redsat-wasm`    | the compiler as WebAssembly (wasm-bindgen) for the web playground; bridges JavaScript solvers | 8 |
 
-Dependencies point strictly downwards (`cli → lang → circuit → sat`). Only `redsat-sat` touches
-native code, and only behind its `cadical` feature.
+Dependencies point strictly downwards (`cli → lsp → lang → circuit → sat`, `wasm → lang`). Only
+`redsat-sat` touches native code, and only behind its `cadical` feature, so `redsat-lang`
+builds for `wasm32-unknown-unknown` unchanged (timing goes through `web-time`).
 
 ### 5.2 Boolean circuits: And-Inverter Graphs
 
@@ -617,9 +651,16 @@ the model, and query failed assumptions.
 | Backend          | Status    | Notes                                                       |
 |------------------|-----------|-------------------------------------------------------------|
 | CaDiCaL 2.2      | ✅ Phase 0 | default; incremental; via the `rustsat-cadical` crate      |
+| Built-in CDCL    | ✅ Phase 7 | pure Rust (watched literals, VSIDS, first-UIP, LBD, Luby restarts, assumptions); `--solver builtin` |
+| Browser solvers  | ✅ Phase 8 | CaDiCaL (and MiniSat) compiled with Emscripten into separate WebAssembly modules; `redsat-wasm` calls them through a JavaScript `Solver` |
 | Kissat           | later     | often fastest one-shot; not incremental                     |
 | External process | later     | any competition solver through a DIMACS file                |
-| Built-in CDCL    | stretch   | educational; same trait, so it is a drop-in                 |
+
+The built-in solver is much slower than CaDiCaL on hard instances (factoring a 33-bit
+semiprime: 13 s against 0.04 s). Typical CDCL tuning (initial phase, a Glucose-style VSIDS decay
+ramp) did not close the gap, which comes from CaDiCaL's inprocessing, rephasing and
+stabilisation. In the browser, the answer is therefore to offer CaDiCaL itself, compiled to
+WebAssembly, rather than to tune the built-in solver.
 
 ## 6. Tooling
 
@@ -630,6 +671,8 @@ Running a program is the default action, so there is no `run` subcommand:
 ```text
 redsat prog.rsat [options]           # compile and run the program
 redsat check prog.rsat [options]     # parse and type-check only: quick feedback for editors and CI
+redsat repl                          # build a program one statement at a time
+redsat lsp                           # the language server (used by editors)
 redsat dimacs problem.cnf            # solve a raw DIMACS file (exit code 10 = SAT, 20 = UNSAT)
 
 options:
@@ -639,8 +682,15 @@ options:
   --max-int-bits <N>
   --config <redsat.toml>             # instead of searching for one
   --stats                            # per solve: domains, bit widths, circuit and CNF sizes, time
+  -v, --verbose                      # progress as it happens: files loaded, each solve's unknowns,
+                                     # decision bits and search space, circuit and CNF sizes
+                                     # (auxiliary variables included), SAT calls, timings, summary
   --interactive                      # pause after each solution: next / all / quit
+  --solver <cadical|builtin>         # the SAT solver
 ```
+
+`--verbose` reports through a hook (`Hooks::trace`) rather than printing, so the playground
+shows the same lines.
 
 Later: `--emit ast|ir|aig|cnf`.
 
@@ -722,6 +772,38 @@ var y: int              // ok
 var n = 42              // ok: the initializer determines the type
 ```
 
+### 6.4 The web playground
+
+`playground/` is a static site: GitHub Pages hosts it, and no server is involved. Programs run in
+the visitor's browser.
+
+- **Compiler.** `redsat-wasm` (Rust → WebAssembly) runs in a Web Worker. Output and `--verbose`
+  lines stream back line by line. *Stop* terminates the worker, because a running solve cannot
+  be interrupted from inside. A second worker analyses the program as you type, for
+  diagnostics, inferred domains, symbols, structs and enums.
+- **Solvers.** The built-in CDCL solver is part of the compiler module. CaDiCaL (and MiniSat)
+  are separate Emscripten modules, loaded on first use. They are single-threaded, because
+  GitHub Pages cannot send the cross-origin isolation headers that WebAssembly threads need.
+  Rust calls them synchronously through an IPASIR-like JavaScript object: `add(clauses)`,
+  `solve(assumptions)`, `value(lit)`, `failed(lit)` and `release()`.
+- **Parallelism without threads.** Single-threaded modules lose nothing per solver, because
+  CaDiCaL is sequential natively too. The cost that remains is WebAssembly against native
+  code, typically 1.3–2×. Parallelism comes from a *portfolio* instead: *Race* runs the program
+  in one Web Worker per solver and keeps the first to finish. Workers are separate threads that
+  need no shared memory or special headers. Solvers that share clauses across threads would
+  need cross-origin isolation, which a service worker (`coi-serviceworker`) can provide on
+  static hosting if one is ever worth shipping.
+- **Editor.** CodeMirror 6, with highlighting, completion and hover docs built from the
+  compiler's own vocabulary (`vocabulary()`), so they cannot drift from the language. It adds
+  snippets, signature help, member completion (struct fields, enum variants) and
+  go-to-definition.
+- **Documents.** The examples are generated from `examples/` at build time. Your own files and
+  your edits live in `localStorage`. Share links carry the program, compressed, in the URL
+  fragment, which never reaches a server.
+- **Phones.** Below 760 px the layout changes: Code and Output become tabs, Run moves to a
+  bottom bar with a row of symbol keys above the on-screen keyboard, and the app is sized to
+  the visual viewport, so the keyboard shrinks the editor instead of covering it.
+
 ## 7. Testing strategy
 
 - **Differential testing of every operator.** Each operator has a concrete semantics (used by
@@ -753,7 +835,8 @@ var n = 42              // ok: the initializer determines the type
 | 4 ✅  | `/` `%` on unknowns, bitwise ops, chars, strings with unknown lengths, enums, structs           | palindromes, graph colouring, scheduling |
 | 5 ✅  | interactive mode, explanations of "no solution" (minimised unsat cores), binary-search optimization | debuggable models               |
 | 6     | optimiser: encoding selection, symmetry breaking, CSE; benchmark suite                           | performance                     |
-| 7     | REPL, built-in CDCL solver                                                                      | stretch                         |
+| 7 ✅  | REPL, built-in CDCL solver, `?` holes (knowns and unknowns side by side)                         | stretch                         |
+| 8 ✅  | standard library in RedSAT, `import`, `--verbose`, the web playground (compiler and solvers as WebAssembly), the RedSAT Guide with tested samples | usable by others |
 
 ## 9. Open questions
 

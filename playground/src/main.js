@@ -2,6 +2,7 @@
 
 import { RACE, SOLVERS, raceMembers, solverById } from './backends.js';
 import { Compiler } from './compiler.js';
+import { createDropdown } from './dropdown.js';
 import { createEditor } from './editor.js';
 import { renderHome } from './home.js';
 import { setupSwitcher } from './switcher.js';
@@ -458,19 +459,21 @@ function setupOptions() {
       if (id === 'strict') editor?.view.dispatch({}); // re-check with the new options
     });
   }
-  const select = $('solver');
-  select.replaceChildren(
-    ...[...SOLVERS, RACE].map((solver) => Object.assign(new Option(solver.label, solver.id), { title: solver.detail })),
-  );
-  select.value = store.settings.solver === RACE.id ? RACE.id : solverById(store.settings.solver).id;
-  select.addEventListener('change', () => {
-    store.settings.solver = select.value;
+  const choose = (value) => {
+    store.settings.solver = value;
     store.saveSettings();
     if (doc) renderSlowNote();
+  };
+  const solver = createDropdown({
+    label: 'SAT solver',
+    choices: [...SOLVERS, RACE].map((choice) => ({ value: choice.id, label: choice.label, detail: choice.detail })),
+    value: store.settings.solver === RACE.id ? RACE.id : solverById(store.settings.solver).id,
+    onChange: choose,
   });
+  $('solver-slot').replaceWith(solver.button);
   $('use-cadical').addEventListener('click', () => {
-    select.value = 'cadical';
-    select.dispatchEvent(new Event('change'));
+    solver.setValue('cadical');
+    choose('cadical');
     toast('Solver: CaDiCaL');
   });
 }

@@ -6,13 +6,13 @@ import { loadCadical } from './solvers/cadical.js';
 import { loadMinisat } from './solvers/minisat.js';
 
 export const SOLVERS = [
-  { id: 'cadical', label: 'CaDiCaL', detail: 'state of the art, C++', load: () => loadCadical() },
-  { id: 'builtin', label: 'Built-in CDCL', detail: "RedSAT's own, Rust", load: null },
-  { id: 'minisat', label: 'MiniSat', detail: 'the classic, C++', load: () => loadMinisat() },
+  { id: 'cadical', label: 'CaDiCaL', detail: 'State of the art, incremental (C++ → WebAssembly)', load: () => loadCadical() },
+  { id: 'builtin', label: 'Built-in CDCL', detail: "RedSAT's own solver, part of the compiler (Rust)", load: null },
+  { id: 'minisat', label: 'MiniSat', detail: 'The classic, small and fast to load (C++ → WebAssembly)', load: () => loadMinisat() },
 ];
 
 /** Not a solver: runs several at once (one Web Worker each) and keeps the first to finish. */
-export const RACE = { id: 'race', label: 'Race solvers', detail: 'all solvers and CaDiCaL variants in parallel, one per core; the fastest wins' };
+export const RACE = { id: 'race', label: 'Race solvers', detail: 'All solvers and CaDiCaL variants in parallel, one per core; the fastest wins' };
 
 export function solverById(id) {
   return SOLVERS.find((solver) => solver.id === id) ?? SOLVERS[0];

@@ -17,3 +17,7 @@ solve take maximize sum(value[i] for i in 0..n if take[i]) {
     print "take: {[names[i] for i in 0..n if take[i]]}"
     print "weight {sum(weight[i] for i in 0..n if take[i])} of {capacity}, value {sum(value[i] for i in 0..n if take[i])}"
 }
+
+// Output:
+// take: ["map", "compass", "sandwich", "glucose", "tin", "banana"]
+// weight 182 of 200, value 510

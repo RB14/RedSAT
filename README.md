@@ -144,7 +144,8 @@ Dependencies point strictly downwards: `cli → lsp → lang → circuit → sat
 `cargo test --workspace` runs unit tests, exhaustive circuit tests, randomized encoder
 equivalence tests, and golden tests. The golden tests run every program in
 `crates/redsat-lang/tests/programs/` and `examples/` and compare their output with checked-in
-`.out` files. After a reviewed change in behaviour, regenerate them with:
+`.out` files (for test programs) and with the `// Output:` block at the bottom of each example.
+After a reviewed change in behaviour, regenerate them with:
 
 ```bash
 REDSAT_BLESS=1 cargo test -p redsat-lang --test programs

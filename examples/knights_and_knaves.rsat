@@ -15,3 +15,7 @@ solve unique a_is_knight, b_is_knight {
     if a_is_knight { print "A is a knight" } else { print "A is a knave" }
     if b_is_knight { print "B is a knight" } else { print "B is a knave" }
 }
+
+// Output:
+// A is a knight
+// B is a knave

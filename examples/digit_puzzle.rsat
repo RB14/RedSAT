@@ -17,3 +17,6 @@ require digit_sum == 30
 require n % 7 == 0
 
 solve n minimize n
+
+// Output:
+// n = 4998

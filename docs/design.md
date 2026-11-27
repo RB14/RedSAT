@@ -731,10 +731,11 @@ var n = 42              // ok: the initializer determines the type
   "CNF + inputs fixed" is satisfiable exactly when the circuit evaluates to true.
 - **Round trips.** DIMACS write → parse → identical formula.
 - **Golden end-to-end tests.** Every program in `crates/redsat-lang/tests/programs/` (errors,
-  features, strict mode with its own `redsat.toml`) and every file in `examples/` is run, and
-  its output plus rendered diagnostics are compared with a checked-in `.out` file. After a
-  reviewed change in behaviour, `REDSAT_BLESS=1 cargo test -p redsat-lang --test programs`
-  rewrites the expectations.
+  features, strict mode with its own `redsat.toml`, imports) and every file in `examples/` is
+  run, and its output plus rendered diagnostics are compared with a checked-in `.out` file (for
+  test programs) or with the `// Output:` comment block at the bottom of the example (so readers
+  see what each example prints). After a reviewed change in behaviour,
+  `REDSAT_BLESS=1 cargo test -p redsat-lang --test programs` rewrites the expectations.
 - **Benchmarks (Phase 5).** Encoding size and solve time, compared against MiniZinc and Z3 on
   shared problems. Solve times on *satisfiable* instances are heavy-tailed and sensitive to the
   exact encoding. In the factoring experiment of §4.5, the smaller circuit proved uniqueness

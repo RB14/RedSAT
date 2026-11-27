@@ -12,3 +12,6 @@ require chickens + rabbits == heads
 require 2 * chickens + 4 * rabbits == legs
 
 solve unique chickens, rabbits
+
+// Output:
+// chickens = 23, rabbits = 12

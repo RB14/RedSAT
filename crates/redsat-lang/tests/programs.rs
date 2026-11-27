@@ -1,8 +1,9 @@
 //! Golden tests: run every program under `tests/programs/` and `examples/`, and compare what it
 //! prints (stdout, then rendered diagnostics) with the expected output.
 //!
-//! Expected outputs live next to test programs (`name.out`) and, for the examples, in
-//! `tests/expected/examples/`. Run with `REDSAT_BLESS=1` to (re)write them after reviewing.
+//! Expected outputs live next to test programs (`name.out`) and, for the examples, in a
+//! `// Output:` comment block at the bottom of each example, so readers see what it prints. Run
+//! with `REDSAT_BLESS=1` to (re)write them after reviewing.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -57,6 +58,50 @@ fn programs_in(directory: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
+/// The line that starts the expected output at the bottom of an example.
+const OUTPUT_MARKER: &str = "// Output:";
+
+/// Where an example's `// Output:` block starts, if it has one.
+fn output_block_start(text: &str) -> Option<usize> {
+    text.rfind(&format!("\n{OUTPUT_MARKER}\n"))
+        .map(|index| index + 1)
+}
+
+/// The output documented at the bottom of an example.
+fn documented_output(text: &str) -> String {
+    let Some(start) = output_block_start(text) else {
+        return String::new();
+    };
+    text[start..]
+        .lines()
+        .skip(1)
+        .map(|line| {
+            line.strip_prefix("// ")
+                .unwrap_or(line.trim_start_matches("//"))
+        })
+        .map(|line| format!("{line}\n"))
+        .collect()
+}
+
+/// `text` with its `// Output:` block replaced by (or extended with) `output`.
+fn with_documented_output(text: &str, output: &str) -> String {
+    let program = output_block_start(text).map_or(text, |start| &text[..start]);
+    let mut result = format!("{}\n\n{OUTPUT_MARKER}\n", program.trim_end());
+    for line in output.lines() {
+        if line.is_empty() {
+            result.push_str("//\n");
+        } else {
+            result.push_str(&format!("// {}\n", line.trim_end()));
+        }
+    }
+    result
+}
+
+/// Outputs compared line by line, ignoring trailing whitespace (which editors strip).
+fn normalized(text: &str) -> Vec<&str> {
+    text.lines().map(str::trim_end).collect()
+}
+
 #[test]
 fn golden_programs() {
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -69,22 +114,27 @@ fn golden_programs() {
         (program, expected)
     }));
 
-    let mut examples = Vec::new();
-    programs_in(&crate_dir.join("../../examples"), &mut examples);
-    cases.extend(examples.into_iter().map(|example| {
-        let name = example
-            .file_stem()
-            .expect("a name")
-            .to_string_lossy()
-            .into_owned();
-        (
-            example,
-            crate_dir.join(format!("tests/expected/examples/{name}.out")),
-        )
-    }));
-
     let bless = std::env::var_os("REDSAT_BLESS").is_some();
     let mut failures = Vec::new();
+
+    let mut examples = Vec::new();
+    programs_in(&crate_dir.join("../../examples"), &mut examples);
+    for example in &examples {
+        let actual = run_program(example);
+        let text = fs::read_to_string(example).expect("readable example");
+        if bless {
+            fs::write(example, with_documented_output(&text, &actual)).expect("writable example");
+            continue;
+        }
+        let expected = documented_output(&text);
+        if normalized(&actual) != normalized(&expected) {
+            failures.push(format!(
+                "── {} ──\n--- expected (its {OUTPUT_MARKER} block)\n{expected}--- actual\n{actual}",
+                example.display()
+            ));
+        }
+    }
+
     for (program, expected_path) in &cases {
         let actual = run_program(program);
         if bless {
@@ -104,7 +154,7 @@ fn golden_programs() {
         failures.is_empty(),
         "{} of {} programs differ:\n\n{}",
         failures.len(),
-        cases.len(),
+        cases.len() + examples.len(),
         failures.join("\n")
     );
 }

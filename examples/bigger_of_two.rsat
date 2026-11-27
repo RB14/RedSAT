@@ -14,3 +14,7 @@ require biggest == 42
 require a + b == 50
 
 solve all a, b
+
+// Output:
+// a = 8, b = 42
+// a = 42, b = 8

@@ -12,3 +12,6 @@ solve all total {
     found = found + 1
 }
 print "{found} numbers up to 50 are sums of two squares"
+
+// Output:
+// 24 numbers up to 50 are sums of two squares

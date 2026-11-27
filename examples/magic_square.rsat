@@ -17,3 +17,6 @@ solve all square {
     count = count + 1
 }
 print "{count} magic squares (the 8 rotations and reflections of one)"
+
+// Output:
+// 8 magic squares (the 8 rotations and reflections of one)

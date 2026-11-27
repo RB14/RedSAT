@@ -16,3 +16,6 @@ solve x, y {
 } else {
     print "{n} is prime"
 }
+
+// Output:
+// 4295229443 = 65537 × 65539

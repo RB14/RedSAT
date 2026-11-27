@@ -23,3 +23,12 @@ solve color {
         print "{regions[i]}: {color[i]}"
     }
 }
+
+// Output:
+// WA: Red
+// NT: Green
+// SA: Blue
+// QLD: Red
+// NSW: Green
+// VIC: Red
+// TAS: Red

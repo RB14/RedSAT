@@ -16,3 +16,8 @@ solve unique s, e, n, d, m, o, r, y {
     print "+ {m}{o}{r}{e}"
     print "= {m}{o}{n}{e}{y}"
 }
+
+// Output:
+//   9567
+// + 1085
+// = 10652

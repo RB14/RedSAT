@@ -9,7 +9,10 @@
 //     int vars();                 // after SAT: the highest variable with a value
 //     int value(int var);         // after SAT: > 0 if var is true, < 0 if false, 0 if unknown
 //     bool failed(int lit);       // after UNSAT: whether assumption lit is in the core
+//     void option(int option, int value);  // an Option of stop.hpp, before adding clauses
 //   };
+//
+// Solves stop early (returning 0) when the page asks, see stop.hpp.
 //
 // Literals cross the boundary in bulk: JavaScript writes a whole clause or assumption list
 // into a shared scratch buffer (solver_buffer) and makes one call, instead of one call per
@@ -56,6 +59,11 @@ EMSCRIPTEN_KEEPALIVE int *solver_buffer(int size) {
 EMSCRIPTEN_KEEPALIVE glue::Instance *solver_new() { return new glue::Instance; }
 
 EMSCRIPTEN_KEEPALIVE void solver_release(glue::Instance *instance) { delete instance; }
+
+/// Sets an option (see Option in stop.hpp) on a new instance, before any clause.
+EMSCRIPTEN_KEEPALIVE void solver_option(glue::Instance *instance, int option, int value) {
+  instance->engine.option(option, value);
+}
 
 /// Adds the first `size` literals of the buffer: zero-terminated clauses.
 EMSCRIPTEN_KEEPALIVE void solver_add(glue::Instance *instance, int size) {

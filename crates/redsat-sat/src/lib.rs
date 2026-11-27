@@ -20,4 +20,4 @@ pub use cdcl::Cdcl;
 pub use cnf::{ClauseSink, Cnf};
 pub use lit::{Lit, Var};
 pub use portfolio::Portfolio;
-pub use solver::{Interrupter, SolveResult, Solver};
+pub use solver::{Interrupter, SolveResult, Solver, Terminator};

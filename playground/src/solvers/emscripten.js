@@ -22,10 +22,26 @@
  * @typedef {object} SolverBackend
  * @property {string} id  e.g. 'cadical'
  * @property {string} name  display name with version, e.g. 'CaDiCaL 2.2.1'
- * @property {() => SatSolver} create
+ * @property {(options?: SolverOptions) => SatSolver} create
+ * @property {(flag: Int32Array | null) => void} setStop  makes running solves stop (returning 0)
+ *   once `flag[0]` is nonzero; `flag` must view a SharedArrayBuffer, or be null
  * @property {() => number} memoryBytes  the module's current WebAssembly memory size (it grows
  *   on demand and never shrinks)
  */
+
+/**
+ * Ways to make instances search differently (for racing several of them).
+ *
+ * @typedef {object} SolverOptions
+ * @property {number} [seed]  random seed
+ * @property {0 | 1} [phase]  initial phase (CaDiCaL)
+ * @property {boolean} [shuffle]  shuffle the variable order (CaDiCaL)
+ * @property {'default' | 'sat' | 'unsat'} [preset]  CaDiCaL's option preset
+ */
+
+/** The option numbers of native/stop.hpp. */
+const OPTION = { seed: 1, phase: 2, shuffle: 3, preset: 4 };
+const PRESET = { default: 0, sat: 1, unsat: 2 };
 
 /** Where the built modules are served: dist/solvers/, next to the bundled worker. */
 const SOLVERS_URL = new URL('./solvers/', import.meta.url);
@@ -78,9 +94,13 @@ async function instantiate(id, url, forget) {
     return lits.length;
   };
 
-  const create = () => {
+  const create = (options = {}) => {
     if (crash) throw new Error(`${name} crashed (${crash}); load it again`);
     let handle = module._solver_new();
+    if (options.preset) module._solver_option(handle, OPTION.preset, PRESET[options.preset] ?? 0);
+    if (options.seed !== undefined) module._solver_option(handle, OPTION.seed, options.seed | 0);
+    if (options.phase !== undefined) module._solver_option(handle, OPTION.phase, options.phase ? 1 : 0);
+    if (options.shuffle) module._solver_option(handle, OPTION.shuffle, 1);
     const live = () => {
       if (crash) throw new Error(`${name} crashed (${crash})`);
       if (handle === null) throw new Error(`${name}: the solver instance was released`);
@@ -98,5 +118,9 @@ async function instantiate(id, url, forget) {
     };
   };
 
-  return { id, name, create, memoryBytes: () => module.HEAP32.buffer.byteLength };
+  const setStop = (flag) => {
+    module.shouldStop = flag ? () => Atomics.load(flag, 0) : null;
+  };
+
+  return { id, name, create, setStop, memoryBytes: () => module.HEAP32.buffer.byteLength };
 }

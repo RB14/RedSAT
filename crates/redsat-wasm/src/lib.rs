@@ -32,6 +32,18 @@ thread_local! {
     static TRACE: RefCell<Option<Function>> = const { RefCell::new(None) };
     /// Creates instances of the JavaScript solver chosen for this run, with its name.
     static SOLVER: RefCell<Option<(Function, String)>> = const { RefCell::new(None) };
+    /// The page's stop flag for this run: an `Int32Array` over a `SharedArrayBuffer`, nonzero
+    /// when the run should stop (only available when the page is cross-origin isolated).
+    static STOP: RefCell<Option<js_sys::Int32Array>> = const { RefCell::new(None) };
+}
+
+/// Whether the page asked the current run to stop.
+fn stop_requested() -> bool {
+    STOP.with(|stop| {
+        stop.borrow()
+            .as_ref()
+            .is_some_and(|flag| js_sys::Atomics::load(flag, 0).unwrap_or(0) != 0)
+    })
 }
 
 /// Reports Rust panics on the JavaScript console instead of an opaque "unreachable" trap.
@@ -79,7 +91,9 @@ pub fn vocabulary() -> String {
 /// line by line; when `on_trace` is given it receives the progress lines `redsat --verbose`
 /// prints. The SAT solver is RedSAT's built-in CDCL, unless `create_solver` is given: then it
 /// is called for each solver instance and returns a JavaScript solver (see `js_solver`) called
-/// `solver_name`. Returns `{ok, diagnostics, rendered, solves, phases, steps}` as JSON.
+/// `solver_name`. When `stop` is given (an `Int32Array` over a `SharedArrayBuffer`), the run
+/// checks it as it goes and ends with the error "stopped" once it holds a nonzero value.
+/// Returns `{ok, diagnostics, rendered, solves, phases, steps}` as JSON.
 ///
 /// # Errors
 /// When `config` is not a valid configuration.
@@ -92,6 +106,7 @@ pub fn run(
     on_trace: Option<Function>,
     create_solver: Option<Function>,
     solver_name: Option<String>,
+    stop: Option<js_sys::Int32Array>,
 ) -> Result<String, JsError> {
     let options = options(config)?;
     let file = SourceFile::new(name, source);
@@ -99,6 +114,8 @@ pub fn run(
     let verbose = on_trace.is_some();
     TRACE.with(|trace| *trace.borrow_mut() = on_trace);
     let external = create_solver.is_some();
+    let stoppable = stop.is_some();
+    STOP.with(|slot| *slot.borrow_mut() = stop);
     SOLVER.with(|solver| {
         *solver.borrow_mut() = create_solver.map(|create| {
             (
@@ -110,7 +127,11 @@ pub fn run(
 
     let factory = move || -> Box<dyn Solver> {
         if !external {
-            return Box::new(Cdcl::new());
+            let mut solver = Cdcl::new();
+            if stoppable {
+                solver.set_terminator(std::sync::Arc::new(stop_requested));
+            }
+            return Box::new(solver);
         }
         SOLVER.with(|solver| {
             let solver = solver.borrow();
@@ -125,6 +146,7 @@ pub fn run(
     let hooks = Hooks {
         ask: None,
         trace: verbose.then_some(&trace as &redsat_lang::TraceFn),
+        cancel: stoppable.then_some(&stop_requested as &redsat_lang::CancelFn),
     };
     let mut out = LineWriter::default();
     let outcome = redsat_lang::run_with(&file, &options, &factory, &mut out, hooks);
@@ -132,6 +154,7 @@ pub fn run(
     OUTPUT.with(|output| output.borrow_mut().take());
     TRACE.with(|trace| trace.borrow_mut().take());
     SOLVER.with(|solver| solver.borrow_mut().take());
+    STOP.with(|stop| stop.borrow_mut().take());
 
     let result = json!({
         "ok": !outcome.has_errors(),

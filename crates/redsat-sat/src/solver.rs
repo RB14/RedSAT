@@ -66,10 +66,21 @@ pub trait Solver: ClauseSink {
     fn interrupter(&mut self) -> Option<Interrupter> {
         None
     }
+
+    /// Makes the solver poll `terminator` while it searches and stop (returning
+    /// [`SolveResult::Unknown`]) when it returns true. Unlike an [`Interrupter`], this works
+    /// without a second thread (e.g. in WebAssembly). Backends that cannot poll ignore it.
+    fn set_terminator(&mut self, terminator: Terminator) {
+        let _ = terminator;
+    }
 }
 
 /// Stops a running solve from another thread (see [`Solver::interrupter`]).
 pub type Interrupter = Box<dyn Fn() + Send + Sync>;
+
+/// Polled by a solver while it searches: returning true stops the search (see
+/// [`Solver::set_terminator`]).
+pub type Terminator = std::sync::Arc<dyn Fn() -> bool + Send + Sync>;
 
 impl<S: Solver + ?Sized> Solver for Box<S> {
     fn name(&self) -> &'static str {
@@ -90,5 +101,9 @@ impl<S: Solver + ?Sized> Solver for Box<S> {
 
     fn interrupter(&mut self) -> Option<Interrupter> {
         (**self).interrupter()
+    }
+
+    fn set_terminator(&mut self, terminator: Terminator) {
+        (**self).set_terminator(terminator);
     }
 }

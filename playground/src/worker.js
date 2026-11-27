@@ -17,6 +17,9 @@ const ANALYSIS_BUDGET_MS = 400;
 /** Solver backends loaded so far, by id. */
 const backends = new Map();
 
+/** The page's stop flag (a view of a SharedArrayBuffer), when the page is cross-origin isolated. */
+let stopFlag = null;
+
 async function backend(id, post) {
   const solver = solverById(id);
   if (!solver.load) return null;
@@ -38,11 +41,17 @@ self.onmessage = async ({ data: request }) => {
   try {
     await ready;
     switch (type) {
+      case 'init':
+        stopFlag = request.stop ?? null;
+        postMessage({ id, type: 'ready' });
+        break;
       case 'hello':
         postMessage({ id, type, version: version(), vocabulary: JSON.parse(vocabulary()) });
         break;
       case 'run': {
         const solver = await backend(request.solver, post);
+        if (stopFlag) Atomics.store(stopFlag, 0, 0);
+        solver?.setStop?.(stopFlag);
         const onOutput = (text) => post('output', text);
         const onTrace = request.verbose ? (text) => post('trace', text) : undefined;
         const result = run(
@@ -51,10 +60,16 @@ self.onmessage = async ({ data: request }) => {
           request.config,
           onOutput,
           onTrace,
-          solver ? () => solver.create() : undefined,
+          solver ? () => solver.create(request.options) : undefined,
           solver ? solver.name : undefined,
+          stopFlag ?? undefined,
         );
-        postMessage({ id, type: 'done', result: JSON.parse(result) });
+        const parsed = JSON.parse(result);
+        if (parsed.diagnostics.some((d) => d.severity === 'error' && d.message === 'stopped')) {
+          postMessage({ id, type: 'crash', fatal: false, message: 'stopped' });
+        } else {
+          postMessage({ id, type: 'done', result: parsed });
+        }
         break;
       }
       case 'analyze': {

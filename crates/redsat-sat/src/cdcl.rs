@@ -131,7 +131,6 @@ impl VarHeap {
 }
 
 /// The built-in CDCL solver.
-#[derive(Debug)]
 pub struct Cdcl {
     num_vars: u32,
     num_clauses: usize,
@@ -162,6 +161,18 @@ pub struct Cdcl {
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// The phase new variables start with.
     initial_phase: bool,
+    /// Polled at every conflict; true stops the search.
+    terminator: Option<crate::Terminator>,
+}
+
+impl std::fmt::Debug for Cdcl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Cdcl")
+            .field("num_vars", &self.num_vars)
+            .field("num_clauses", &self.num_clauses)
+            .field("conflicts", &self.conflicts)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for Cdcl {
@@ -202,6 +213,7 @@ impl Cdcl {
             conflicts: 0,
             stop: std::sync::Arc::default(),
             initial_phase: false,
+            terminator: None,
         }
     }
 
@@ -570,7 +582,9 @@ impl Cdcl {
             if let Some(conflict) = self.propagate() {
                 self.conflicts += 1;
                 conflicts += 1;
-                if self.stop.load(std::sync::atomic::Ordering::Relaxed) {
+                if self.stop.load(std::sync::atomic::Ordering::Relaxed)
+                    || self.terminator.as_ref().is_some_and(|terminate| terminate())
+                {
                     self.backtrack(0);
                     return Some(SolveResult::Unknown);
                 }
@@ -713,6 +727,10 @@ impl ClauseSink for Cdcl {
 impl Solver for Cdcl {
     fn name(&self) -> &'static str {
         "built-in CDCL"
+    }
+
+    fn set_terminator(&mut self, terminator: crate::Terminator) {
+        self.terminator = Some(terminator);
     }
 
     fn interrupter(&mut self) -> Option<crate::Interrupter> {

@@ -148,6 +148,7 @@ pub(crate) struct Interpreter<'a> {
     out: &'a mut (dyn Write + Send),
     ask: Option<&'a AskFn>,
     trace: Option<&'a crate::TraceFn>,
+    cancel: Option<&'a crate::CancelFn>,
     store: TermStore,
     constraints: Vec<Constraint>,
     scopes: Vec<Scope>,
@@ -182,6 +183,7 @@ impl<'a> Interpreter<'a> {
             out,
             ask: hooks.ask,
             trace: hooks.trace,
+            cancel: hooks.cancel,
             store: TermStore::default(),
             constraints: Vec::new(),
             scopes: vec![Scope::default()],
@@ -235,6 +237,9 @@ impl<'a> Interpreter<'a> {
             }
         }
         self.steps.statements += 1;
+        if self.steps.statements % 256 == 0 && self.cancel.is_some_and(|cancel| cancel()) {
+            return Err(Diagnostic::error(stmt.span, crate::STOPPED));
+        }
         match &stmt.kind {
             StmtKind::Var(decl) => self.exec_var(decl)?,
             StmtKind::Assign { target, value } => self.exec_assign(target, value)?,
@@ -727,6 +732,7 @@ impl<'a> Interpreter<'a> {
             explain: solve.else_block.is_none(),
             ask: self.ask,
             trace: self.trace,
+            cancel: self.cancel,
         };
         if let Some(trace) = self.trace {
             let file = self.sources.file_at(span.start);

@@ -12,6 +12,22 @@
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="style.css" />
+    <script>
+      // A service worker adds the headers that make the page cross-origin isolated (GitHub Pages
+      // cannot) and caches the WebAssembly modules; see sw.js. The page reloads once to become
+      // isolated; without service workers everything still works, Stop just restarts a worker.
+      if ('serviceWorker' in navigator && window.isSecureContext) {
+        navigator.serviceWorker.register('sw.js').then(() => {
+          if (window.crossOriginIsolated || sessionStorage.getItem('redsat.isolating')) return;
+          const reload = () => {
+            sessionStorage.setItem('redsat.isolating', '1');
+            location.reload();
+          };
+          if (navigator.serviceWorker.controller) reload();
+          else navigator.serviceWorker.addEventListener('controllerchange', reload, { once: true });
+        });
+      }
+    </script>
     <script type="module" src="app.js"></script>
   </head>
   <body data-view="loading" data-tab="code">

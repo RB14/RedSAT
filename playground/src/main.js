@@ -1,6 +1,6 @@
 // The RedSAT playground: write a program or open an example, and run it in the browser.
 
-import { RACE, SOLVERS, solverById } from './backends.js';
+import { RACE, SOLVERS, raceMembers, solverById } from './backends.js';
 import { Compiler } from './compiler.js';
 import { createEditor } from './editor.js';
 import { renderHome } from './home.js';
@@ -288,14 +288,15 @@ function setRunning(value) {
  * output is shown and the others are stopped. Resolves to {result, solver}.
  */
 function race(request, onStatus) {
+  const members = raceMembers();
   return new Promise((resolve, reject) => {
     let settled = false;
     const failures = [];
-    SOLVERS.forEach((solver, index) => {
+    members.forEach((solver, index) => {
       const output = [];
       runner(index)
         .request(
-          { ...request, solver: solver.id },
+          { ...request, solver: solver.id, options: solver.options },
           {
             onOutput: (text) => output.push(['out', text]),
             onTrace: (text) => output.push(['trace', `${text}\n`]),
@@ -305,14 +306,14 @@ function race(request, onStatus) {
         .then(({ result }) => {
           if (settled) return;
           settled = true;
-          SOLVERS.forEach((_, other) => other !== index && runner(other).restart('lost the race'));
+          members.forEach((_, other) => other !== index && runner(other).stop());
           for (const [kind, text] of output) emit(kind, text);
           resolve({ result, solver });
         })
         .catch((error) => {
-          if (settled || error.message === 'lost the race') return;
+          if (settled) return;
           failures.push(error);
-          if (failures.length === SOLVERS.length) {
+          if (failures.length === members.length) {
             settled = true;
             reject(failures[0]);
           }
@@ -330,7 +331,7 @@ async function runProgram() {
   const racing = store.settings.solver === RACE.id;
   let solver = solverById(store.settings.solver);
   const started = performance.now();
-  let status = racing ? `Racing ${SOLVERS.length} solvers` : 'Running';
+  let status = racing ? `Racing ${raceMembers().length} solvers` : 'Running';
   const tick = () => setStatus('running', `${status}… ${formatTime(performance.now() - started)}`);
   tick();
   const timer = setInterval(tick, 100);
@@ -380,7 +381,7 @@ async function runProgram() {
 }
 
 function stopProgram() {
-  if (running) runners.forEach((worker) => worker.restart());
+  if (running) runners.forEach((worker) => worker.stop());
 }
 
 /** The compiler's analysis for the editor (the latest request wins). */

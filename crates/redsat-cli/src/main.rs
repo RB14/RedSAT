@@ -268,6 +268,7 @@ fn run(file: &Path, cli: &Cli) -> Result<ExitCode, Box<dyn Error>> {
     let hooks = Hooks {
         ask: cli.interactive.then_some(&ask as &AskFn),
         trace: cli.verbose.then_some(&trace as &TraceFn),
+        cancel: None,
     };
     let outcome = redsat_lang::run_with(&source, &options, &factory, &mut out, hooks);
     out.flush()?;

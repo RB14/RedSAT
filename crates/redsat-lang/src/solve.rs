@@ -40,6 +40,8 @@ pub(crate) struct SolveRequest<'a> {
     pub ask: Option<&'a AskFn>,
     /// Told about progress, for `--verbose`.
     pub trace: Option<&'a TraceFn>,
+    /// Asked whether to stop.
+    pub cancel: Option<&'a crate::CancelFn>,
 }
 
 /// How a `solve` ended.
@@ -366,7 +368,14 @@ pub(crate) fn solve(
         let outcome = attempt.run(request, &objective_range, on_solution);
         stats.search += searching.elapsed();
         attempt.record(&mut stats);
-        let outcome = outcome?;
+        // A solver stopped on request gives up; say why.
+        let outcome = outcome.map_err(|error| {
+            if request.cancel.is_some_and(|cancel| cancel()) {
+                Diagnostic::error(error.span, crate::STOPPED)
+            } else {
+                error
+            }
+        })?;
         trace(format!(
             "  searched   {} SAT call{} · {} solution{} · {:.2?} (CNF grew to {} variables, {} clauses)",
             stats.sat_calls - calls_before,

@@ -6,6 +6,10 @@
 #include <cstdlib>
 
 #include "minisat/core/Solver.h"
+#include "stop.hpp"
+
+/// Conflicts per slice of a solve: between slices the page is asked whether to stop.
+constexpr int kSlice = 10000;
 
 struct Engine {
   Minisat::Solver solver;
@@ -31,9 +35,24 @@ struct Engine {
   void assume(int dimacs) { assumptions.push(lit(dimacs)); }
 
   int solve() {
-    const bool sat = solver.solve(assumptions);
+    // MiniSat has no terminator callback: solve in slices of conflicts (learnt clauses carry
+    // over) and ask the page between them.
+    Minisat::lbool result = Minisat::l_Undef;
+    while (result == Minisat::l_Undef && !glue_should_stop()) {
+      solver.setConfBudget(kSlice);
+      result = solver.solveLimited(assumptions);
+    }
+    solver.budgetOff();
     assumptions.clear();
-    return sat ? 10 : 20;
+    return result == Minisat::l_True ? 10 : result == Minisat::l_False ? 20 : 0;
+  }
+
+  /// Diversification for portfolios: a seed randomises the initial activities.
+  void option(int option, int value) {
+    if (option == kSeed) {
+      solver.random_seed = 91648253.0 + value;
+      solver.rnd_init_act = true;
+    }
   }
 
   int vars() { return solver.model.size(); }

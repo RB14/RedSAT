@@ -4,7 +4,7 @@
 //   node scripts/build.mjs           build once (minified)
 //   node scripts/build.mjs --serve   build, watch and serve on http://localhost:8000
 
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import * as esbuild from 'esbuild';
@@ -28,6 +28,9 @@ function copyStatic() {
   for (const file of ['index.html', 'style.css', 'favicon.svg']) {
     copyFileSync(here(`src/${file}`), `${dist}/${file}`);
   }
+  // Each build gets its own cache in the service worker (see sw.js).
+  const build = `${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`;
+  writeFileSync(`${dist}/sw.js`, readFileSync(here('src/sw.js'), 'utf8').replace('__REDSAT_BUILD__', build));
   copyFileSync(here('pkg/redsat_wasm_bg.wasm'), `${dist}/redsat_wasm_bg.wasm`);
   // The solvers built by build-solvers.mjs, if any (the built-in solver needs none of them).
   if (existsSync(here('pkg/solvers'))) {

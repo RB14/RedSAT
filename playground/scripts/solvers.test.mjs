@@ -82,3 +82,31 @@ for (const id of ids) {
     solver.release();
   });
 }
+
+for (const id of ids) {
+  test(`${id}: a shared stop flag stops a long solve, and the instance stays usable`, async () => {
+    const backend = await loadSolverModule(id, base);
+    const flag = new Int32Array(new SharedArrayBuffer(4));
+    backend.setStop(flag);
+    // Pigeonhole 10 into 9: far too hard to finish here.
+    const solver = backend.create({ seed: 3, phase: 0, shuffle: true, preset: 'unsat' });
+    const pigeons = 10;
+    const holes = 9;
+    const v = (p, h) => p * holes + h + 1;
+    const formula = [];
+    for (let p = 0; p < pigeons; p++) formula.push([...Array(holes).keys()].map((h) => v(p, h)));
+    for (let h = 0; h < holes; h++) {
+      for (let p = 0; p < pigeons; p++) for (let q = p + 1; q < pigeons; q++) formula.push([-v(p, h), -v(q, h)]);
+    }
+    solver.add(clauses(...formula));
+    Atomics.store(flag, 0, 1);
+    assert.equal(solver.solve(new Int32Array()), 0, 'stopped: unknown');
+    Atomics.store(flag, 0, 0);
+    backend.setStop(null);
+    solver.release();
+    const easy = backend.create();
+    easy.add(clauses([1], [-1, 2]));
+    assert.equal(easy.solve(new Int32Array()), 10);
+    easy.release();
+  });
+}

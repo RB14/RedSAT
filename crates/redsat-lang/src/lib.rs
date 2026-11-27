@@ -55,6 +55,12 @@ pub enum Answer {
 /// Asked after each solution in interactive mode, with the number of solutions shown so far.
 pub type AskFn = dyn Fn(u64) -> Answer + Sync;
 
+/// Asked now and then during a run whether to stop (e.g. the playground's Stop button).
+pub type CancelFn = dyn Fn() -> bool + Sync;
+
+/// The message of the error a run ends with when [`Hooks::cancel`] stops it.
+pub const STOPPED: &str = "stopped";
+
 /// Told about the progress of a run, one line at a time, as with `redsat --verbose`.
 pub type TraceFn = dyn Fn(&str) + Sync;
 
@@ -66,6 +72,10 @@ pub struct Hooks<'h> {
     /// Told about progress: files loaded, each solve's model, circuit and search, and a
     /// summary.
     pub trace: Option<&'h TraceFn>,
+    /// Asked between statements and between SAT calls whether to stop; when it says so, the
+    /// run ends with the error [`STOPPED`]. (A SAT call in progress stops only if its solver
+    /// polls the same condition, see `Solver::set_terminator`.)
+    pub cancel: Option<&'h CancelFn>,
 }
 
 /// The result of checking or running a program.

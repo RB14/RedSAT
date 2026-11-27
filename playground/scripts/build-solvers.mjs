@@ -110,7 +110,7 @@ const LINK_FLAGS = [
   '-sSTACK_SIZE=4MB',
   '-sFILESYSTEM=0',
   '-sEXPORTED_FUNCTIONS=' +
-    ['name', 'buffer', 'new', 'release', 'add', 'solve', 'value', 'failed']
+    ['name', 'buffer', 'new', 'release', 'option', 'add', 'solve', 'value', 'failed']
       .map((name) => `_solver_${name}`)
       .join(','),
   '-sEXPORTED_RUNTIME_METHODS=HEAP32,UTF8ToString',

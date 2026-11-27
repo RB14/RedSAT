@@ -33,7 +33,8 @@ const theme = EditorView.theme({
   '.cm-content': { caretColor: 'var(--accent)', padding: '10px 0' },
   '.cm-cursor': { borderLeftColor: 'var(--accent)', borderLeftWidth: '2px' },
   '.cm-gutters': { backgroundColor: 'var(--surface)', color: 'var(--muted)', border: 'none' },
-  '.cm-activeLine': { backgroundColor: 'var(--active-line)' },
+  // Translucent: the selection is drawn behind the text and must show through on this line.
+  '.cm-activeLine': { backgroundColor: 'var(--editor-active-line)' },
   '.cm-activeLineGutter': { backgroundColor: 'var(--active-line)', color: 'var(--text)' },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
     backgroundColor: 'var(--selection) !important',

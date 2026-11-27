@@ -13,6 +13,7 @@
   --text: #1c1c1f;
   --muted: #6f6f78;
   --active-line: #f4f4f6;
+  --editor-active-line: rgba(0, 0, 0, 0.035);
   --selection: #fbd5d7;
   --ok: #18794e;
   --warn: #ad5700;
@@ -46,6 +47,7 @@
     --text: #ececef;
     --muted: #9b9ba5;
     --active-line: #1f1f23;
+    --editor-active-line: rgba(255, 255, 255, 0.035);
     --selection: #4a1f24;
     --ok: #3dd68c;
     --warn: #ffa057;

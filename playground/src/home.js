@@ -1,6 +1,34 @@
 // The home view: a welcome for newcomers, your files, and the examples by category.
+//
+// On phones it is two pages: the landing (the introduction, a short example and the two ways to
+// start) and the examples, which "Start with an example" opens. The examples page is a history
+// entry, so the system back gesture returns to the landing.
 
 const CATEGORY_ORDER = ['Getting started', 'Puzzles', 'Planning & optimization', 'Numbers', 'Strings & bits', 'More'];
+
+const phone = window.matchMedia('(max-width: 760px)');
+
+/** The page the home view shows on phones: 'landing' or 'examples'. */
+let page = 'landing';
+/** The home view's container, while it is rendered. */
+let pages = null;
+
+function showPage(name, { push = false } = {}) {
+  page = name;
+  if (!pages) return;
+  pages.dataset.page = name;
+  pages.closest('.home')?.scrollTo({ top: 0 });
+  if (push) history.pushState({ redsatHome: name }, '');
+}
+
+window.addEventListener('popstate', (event) => {
+  if (page === 'examples' && event.state?.redsatHome !== 'examples') showPage('landing');
+});
+
+function backToLanding() {
+  if (history.state?.redsatHome === 'examples') history.back();
+  else showPage('landing');
+}
 
 function h(tag, attributes = {}, ...children) {
   const element = document.createElement(tag);
@@ -56,7 +84,7 @@ export function renderHome(root, state, actions) {
       h('h1', {}, 'Describe the answer. ', h('span', {}, 'RedSAT finds it.')),
       h(
         'p',
-        {},
+        { class: 'hero-lead' },
         'Write ordinary-looking code with unknowns in it. State what must hold, and the compiler ',
         'turns your program into a SAT problem, solves it, and prints the values that work.',
       ),
@@ -64,7 +92,14 @@ export function renderHome(root, state, actions) {
         'div',
         { class: 'hero-actions' },
         h('button', { class: 'primary big', onclick: actions.newFile }, '+ New file'),
-        h('button', { class: 'big', onclick: () => actions.openExample(examples[0].name) }, 'Start with an example'),
+        h(
+          'button',
+          {
+            class: 'big',
+            onclick: () => (phone.matches ? showPage('examples', { push: true }) : actions.openExample(examples[0].name)),
+          },
+          'Start with an example',
+        ),
       ),
       h('p', { class: 'hero-note' }, 'Runs entirely in your browser · ', h('a', { href: 'guide/' }, 'Read the guide →')),
     ),
@@ -98,7 +133,7 @@ export function renderHome(root, state, actions) {
     { class: 'card new' },
     h('button', { class: 'card-main', onclick: actions.newFile }, h('span', { class: 'card-title' }, '+ New file'), h('span', { class: 'card-text' }, 'Start from a small template')),
   );
-  const yourFiles = h('section', { class: 'shelf' }, h('h2', {}, 'Your files'), h('div', { class: 'cards' }, newCard, ...fileCards));
+  const yourFiles = h('section', { class: 'shelf files' }, h('h2', {}, 'Your files'), h('div', { class: 'cards' }, newCard, ...fileCards));
 
   const byCategory = new Map();
   for (const example of examples) {
@@ -141,5 +176,28 @@ export function renderHome(root, state, actions) {
     ? h('button', { class: 'ghost home-close', onclick: actions.close, title: 'Back to the editor (Esc)' }, '← Back to the editor')
     : null;
 
-  root.replaceChildren(h('div', { class: 'home-inner' }, close, hero, yourFiles, h('div', { class: 'examples-title' }, h('h2', {}, 'Examples')), exampleShelves));
+  // The examples page's header (phones only).
+  const examplesHead = h(
+    'div',
+    { class: 'home-page-head' },
+    h('button', { class: 'ghost', onclick: backToLanding }, '← Back'),
+    h('h2', {}, 'Choose an example'),
+  );
+
+  pages = h(
+    'div',
+    { class: 'home-inner', 'data-page': page },
+    close,
+    examplesHead,
+    hero,
+    yourFiles,
+    h('div', { class: 'examples-title' }, h('h2', {}, 'Examples')),
+    exampleShelves,
+  );
+  root.replaceChildren(pages);
+}
+
+/** Shows the landing page the next time the home view opens (on phones). */
+export function resetHomePage() {
+  page = 'landing';
 }

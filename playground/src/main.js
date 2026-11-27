@@ -4,7 +4,7 @@ import { RACE, SOLVERS, raceMembers, solverById } from './backends.js';
 import { Compiler } from './compiler.js';
 import { createDropdown, placePanel } from './dropdown.js';
 import { createEditor } from './editor.js';
-import { renderHome } from './home.js';
+import { renderHome, resetHomePage } from './home.js';
 import { setupSwitcher } from './switcher.js';
 import { markOutput, setupMobile, showTab } from './mobile.js';
 import { lexicon } from './rsat-language.js';
@@ -54,6 +54,7 @@ function sourceOf(document) {
 
 function open(document) {
   doc = document;
+  resetHomePage();
   if (document.kind !== 'shared') {
     store.current = { kind: document.kind, id: document.id };
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);

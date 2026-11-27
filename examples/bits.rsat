@@ -1,14 +1,11 @@
 // Bit manipulation: find the 8-bit numbers whose bits read the same in both directions and
-// that have exactly four ones, then list them in binary.
+// that have exactly four ones, then list them in binary. `bit` and `popcount` come from the
+// standard library.
 
 var x: uint<8>
 
-fn bit(x: int, i: int) -> int {
-    return (x >> i) & 1
-}
-
 require all(bit(x, i) == bit(x, 7 - i) for i in 0..4)
-require count(bit(x, i) == 1 for i in 0..8) == 4
+require popcount(x, 8) == 4
 
 solve all x {
     print "{x}: {binary(x)}"

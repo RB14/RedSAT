@@ -46,8 +46,9 @@ pub(crate) struct Blasted {
     bits: Vec<Option<Bits>>,
     /// Constraints that must always hold for the circuit to mean what the terms mean: domain
     /// constraints keeping each unknown inside its domain (when its bit layout can represent
-    /// more values, e.g. `int[0..=9]` in 4 bits), and the definitions of division results.
-    pub(crate) side_constraints: Vec<Edge>,
+    /// more values, e.g. `int[0..=9]` in 4 bits), and the definitions of division results. Each
+    /// comes with the term whose circuit needs it (the unknown, or the division).
+    pub(crate) side_constraints: Vec<(TermId, Edge)>,
 }
 
 impl Blasted {
@@ -117,15 +118,17 @@ pub(crate) fn blast(
         side: Vec::new(),
         divisions: HashMap::new(),
     };
+    let mut origins = Vec::new();
     for (id, term) in store.terms() {
         if reachable[id.index()] {
             let result = blaster.term(id, term, domains);
             blaster.bits[id.index()] = Some(result);
+            origins.resize(blaster.side.len(), id);
         }
     }
     Blasted {
         bits: blaster.bits,
-        side_constraints: blaster.side,
+        side_constraints: origins.into_iter().zip(blaster.side).collect(),
     }
 }
 

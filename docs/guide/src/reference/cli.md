@@ -120,19 +120,27 @@ starting with `[redsat]`. Here is a Sudoku:
 
 ```console
 $ redsat examples/sudoku.rsat --verbose
-[redsat] loaded 2 files (examples/sudoku.rsat, <prelude>) · parsed and checked in 578.61µs
+[redsat] loaded 2 files (examples/sudoku.rsat, <prelude>) · parsed and checked in 513.12µs
 [redsat] solve #1 at examples/sudoku.rsat:27
 [redsat]   model      unique · 78 requirements · 242 IR terms
-[redsat]   unknowns   51 (51 integer, 0 boolean), 0 fixed by domain inference · domains in 28.54µs
+[redsat]   unknowns   51 (51 integer, 0 boolean), 0 fixed by domain inference · domains in 34.40µs
 [redsat]              ?8:12: [1, 9] · 4 bits
 [redsat]              ?8:16: [1, 9] · 4 bits
 [redsat]              …
 [redsat]              … and 43 more
 [redsat]   space      204 decision bits → 2^204 candidate assignments
-[redsat]   circuit    6553 AND gates over 204 inputs → CNF 4062 variables (3858 auxiliary), 6210 clauses · built in 2.17ms
-[redsat]   search     with CaDiCaL…
-[redsat]   searched   2 SAT calls · 1 solution · 11.25ms (CNF grew to 4062 variables, 6211 clauses)
-[redsat] finished in 14.34ms: 94 statements executed, no calls inlined, 1 solve taking 13.50ms
+[redsat]   circuit    6502 AND gates over 204 inputs → CNF 4011 variables (3807 auxiliary), 6057 clauses · built in 3.09ms
+[redsat]   cost       by source line (shared circuitry counts at the first line needing it)
+[redsat]                line  unknowns   times     inputs   AND gates     clauses  share  source
+[redsat]                   8         6                 24          30          24     0%  [5, 3, ?, ?, 7, ?, ?, ?, ?],
+[redsat]                   …
+[redsat]                  16         6                 24          30          24     0%  [?, ?, ?, ?, 8, ?, ?, 7, 9],
+[redsat]                  20                ×9          0       2,146       1,984    33%  require all_different(grid[i]) // row i
+[redsat]                  21                ×9          0       2,210       2,101    35%  require all_different([grid[r][i] for r in 0..9]) // column…
+[redsat]                  24                ×9          0       1,840       1,768    29%  require all_different([grid[top + r][left + c] for r in 0..…
+[redsat]   search     with portfolio of CaDiCaL ×4…
+[redsat]   searched   2 SAT calls · 1 solution · 21.26ms (CNF grew to 4011 variables, 6058 clauses)
+[redsat] finished in 25.59ms: 94 statements executed, no calls inlined, 1 solve taking 24.54ms
 ```
 
 | Line        | Says                                                                                       |
@@ -143,6 +151,7 @@ $ redsat examples/sudoku.rsat --verbose
 | `unknowns`  | how many unknowns it involves, how many domain inference already pinned to a single value, and how long inference took; then up to eight of them with their ranges and widths (unnamed `?` holes are shown by their line and column) |
 | `space`     | the total number of bits the solver must decide, and so the number of candidate assignments. A brute-force search would try them all; the SAT solver typically explores a tiny fraction |
 | `circuit`   | the size of the Boolean circuit and of the CNF formula built from it (the *auxiliary* variables stand for the circuit's gates), and how long building them took |
+| `cost`      | where that size comes from, line by line: see [below](#where-the-cost-comes-from) |
 | `search`    | which SAT solver is running                                                                |
 | `searched`  | how many SAT calls and solutions there were, how long the search took, and how big the formula grew (enumeration and optimization add clauses as they go) |
 | `deepening` | no solution was found within the current bounds of unbounded integers, so RedSAT retries with twice as many bits |
@@ -151,6 +160,47 @@ $ redsat examples/sudoku.rsat --verbose
 
 Program output appears between these lines as it is printed. See
 [Performance tips](../under-the-hood/performance.md) for how to act on what `--verbose` shows.
+
+### Where the cost comes from
+
+Like a database's `EXPLAIN ANALYZE`, the `cost` table breaks the problem down by source line,
+so you can see which statements make it big. Here are the 100-digit factoring example's
+lines:
+
+```console
+$ redsat examples/factor100.rsat --verbose
+…
+[redsat]   circuit    291413 AND gates over 3758 inputs → CNF 280006 variables (279672 auxiliary), 824713 clauses · built in 357.16ms
+[redsat]   cost       by source line (shared circuitry counts at the first line needing it)
+[redsat]                line  unknowns   times     inputs   AND gates     clauses  share  source
+[redsat]                  16         2                334         657         972     0%  var x, y
+[redsat]                  19                            0     221,601     662,644    80%  require x * y == n
+[redsat]                  22                            0           0           2     0%  require is_odd(x) and is_odd(y)
+[redsat]                  26                            0           0           0   free  require x > 1 and x <= root and y > root
+[redsat]                  29                            0           0           0   free  require x <= y
+[redsat]                  36               ×10      3,424      61,766     161,095    20%  require x % m * (y % m) % m == n % m
+[redsat]                  42                            0           0           0   free  require x >= 10 ^ 49
+[redsat]              free: folded into the inferred ranges (it may narrow the unknowns), so it needs no circuit
+```
+
+| Column      | Says                                                                                       |
+|-------------|--------------------------------------------------------------------------------------------|
+| `unknowns`  | how many unknowns the line declares (each `?` hole is one)                                  |
+| `times`     | how many requirements the line made, when more than one (a `require` in a loop makes one per iteration) |
+| `inputs`    | the bits the solver must decide that the line introduced: an unknown's bits, or auxiliary ones, such as the quotient behind each `x % m` |
+| `AND gates` | the circuit the line added                                                                 |
+| `clauses`   | the CNF clauses the line added, and their `share` of the total                             |
+
+Some rules for reading it:
+
+- Circuitry that several lines share counts once, at the first line that needs it, in program
+  order. A later line that only reuses it shows little or nothing.
+- A requirement marked **free** costs nothing because domain inference absorbed it. That does
+  not make it useless: it may have narrowed the unknowns, and so shrunk every other line. Above,
+  `x >= 10 ^ 49` is free, yet it is the reason `y` needs 168 bits instead of 326.
+- What happens inside a standard-library function is charged to the line that calls it. What
+  happens inside your own functions is charged to their lines.
+- Long programs list their 24 costliest lines, and sum up the rest in one row.
 
 ## The built-in solver
 

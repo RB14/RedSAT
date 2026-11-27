@@ -760,13 +760,31 @@ options:
   --stats                            # per solve: domains, bit widths, circuit and CNF sizes, time
   -v, --verbose                      # progress as it happens: files loaded, each solve's unknowns,
                                      # decision bits and search space, circuit and CNF sizes
-                                     # (auxiliary variables included), SAT calls, timings, summary
+                                     # (auxiliary variables included) and their cost by source
+                                     # line, SAT calls, timings, summary
   --interactive                      # pause after each solution: next / all / quit
   --solver <cadical|builtin>         # the SAT solver
 ```
 
 `--verbose` reports through a hook (`Hooks::trace`) rather than printing, so the playground
 shows the same lines.
+
+Its **cost by source line** (in the spirit of SQL's `EXPLAIN ANALYZE`) is measured while the
+CNF is built, without changing it. Requirements are encoded one at a time, then the side
+constraints, in the usual order (the order of clauses steers the solver, so measuring must not
+change it). Each part is charged what no earlier part needed, first come, first charged:
+- **AIG nodes:** the nodes of its cone that are not yet claimed.
+- **Clauses:** the solver's clause count before and after its `require`, since encoding is lazy.
+
+Two rules decide which line a cost belongs to:
+- Side constraints go to their owner. An unknown's domain bounds go to its declaration. A
+  division's definition (quotient times divisor) goes to the first requirement whose expression
+  contains the division.
+- Constraints are reported at a `site`: their own line, or, for those made inside the standard
+  library, the innermost call from the program.
+
+Requirements whose circuit is constant `true` are reported as *free*: domain inference
+absorbed them.
 
 Later: `--emit ast|ir|aig|cnf`.
 

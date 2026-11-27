@@ -154,6 +154,8 @@ pub(crate) struct Interpreter<'a> {
     scopes: Vec<Scope>,
     functions: HashMap<String, Rc<FnDecl>>,
     frames: Vec<Frame>,
+    /// The calls being executed, outermost first (see [`Self::report_site`]).
+    call_sites: Vec<Span>,
     /// Conditions of the enclosing symbolic branches.
     guards: Vec<TermId>,
     /// The value of every term while a `solve` body runs.
@@ -189,6 +191,7 @@ impl<'a> Interpreter<'a> {
             scopes: vec![Scope::default()],
             functions: HashMap::new(),
             frames: Vec::new(),
+            call_sites: Vec::new(),
             guards: Vec::new(),
             model: None,
             struct_depth: 0,
@@ -313,10 +316,38 @@ impl<'a> Interpreter<'a> {
     }
 
     /// Records a constraint, guarded by the current path condition.
+    /// Adds an implicit constraint (see [`Constraint::explicit`]) under the current condition.
     fn add_constraint(&mut self, term: TermId, span: Span) {
+        self.push_constraint(term, span, false);
+    }
+
+    fn push_constraint(&mut self, term: TermId, span: Span, explicit: bool) {
         let guard = self.path_guard();
         let term = self.store.implies(guard, term);
-        self.constraints.push(Constraint { term, span });
+        let site = self.report_site(span);
+        self.constraints.push(Constraint {
+            term,
+            span,
+            site,
+            explicit,
+        });
+    }
+
+    /// Where to report the cost of what `span` makes: `span` itself, unless it lies in the
+    /// standard library, whose source the program does not show; then the innermost call that
+    /// the program makes into it.
+    fn report_site(&self, span: Span) -> Span {
+        let in_prelude =
+            |span: Span| self.sources.file_at(span.start).name() == crate::load::PRELUDE_NAME;
+        if !in_prelude(span) {
+            return span;
+        }
+        self.call_sites
+            .iter()
+            .rev()
+            .copied()
+            .find(|&site| !in_prelude(site))
+            .unwrap_or(span)
     }
 
     fn require(&mut self, value: &Value, span: Span) {
@@ -330,9 +361,9 @@ impl<'a> Interpreter<'a> {
                     ));
                 }
                 let never = self.store.bool(false);
-                self.add_constraint(never, span);
+                self.push_constraint(never, span, true);
             }
-            Value::Sym(term, _) => self.add_constraint(*term, span),
+            Value::Sym(term, _) => self.push_constraint(*term, span, true),
             other => unreachable!("type checked as bool, got {other:?}"),
         }
     }
@@ -732,6 +763,7 @@ impl<'a> Interpreter<'a> {
             explain: solve.else_block.is_none(),
             ask: self.ask,
             trace: self.trace,
+            sources: self.sources,
             cancel: self.cancel,
         };
         if let Some(trace) = self.trace {
@@ -2290,9 +2322,12 @@ impl<'a> Interpreter<'a> {
         let at_most = self.store.le(square, radicand);
         let below_next = self.store.lt(radicand, next_square);
         let definition = self.store.and(at_most, below_next);
+        let site = self.report_site(span);
         self.constraints.push(Constraint {
             term: definition,
             span,
+            site,
+            explicit: false,
         });
         let natural = self.store.le(zero, n);
         self.add_constraint(natural, span);
@@ -2378,7 +2413,9 @@ impl<'a> Interpreter<'a> {
         self.steps.calls += 1;
         self.steps.max_depth = self.steps.max_depth.max(self.frames.len() + 1);
         let saved = std::mem::replace(&mut self.scopes, vec![Scope::default()]);
+        self.call_sites.push(span);
         let result = self.run_function(decl, args, span);
+        self.call_sites.pop();
         self.scopes = saved;
         // Point from errors inside the function back to the call (a short call stack).
         result.map_err(|error| {

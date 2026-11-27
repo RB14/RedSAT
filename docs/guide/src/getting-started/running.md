@@ -68,7 +68,9 @@ $ redsat examples/coins.rsat --verbose
 ```
 
 Reach for it when a program is slow: it tells you whether the time goes into building the
-problem or into solving it, and how big the problem is. The
+problem or into solving it, and how big the problem is. Each `solve` also gets a `cost` table
+that breaks the size down by source line, like a database's `EXPLAIN ANALYZE`, so you can see
+which statements make the problem big. The
 [command-line reference](../reference/cli.md#reading---verbose) explains every line.
 
 ## Step through solutions: `--interactive`

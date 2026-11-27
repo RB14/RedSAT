@@ -6,16 +6,16 @@ use web_time::Instant;
 
 use num_bigint::BigInt;
 use num_traits::One;
-use redsat_circuit::{CircuitSolver, Edge, IntVec, int};
+use redsat_circuit::{Aig, CircuitSolver, Edge, IntVec, Node, int};
 use redsat_sat::{SolveResult, Solver};
 
 use crate::ast::{Objective, SolveMode};
-use crate::blast::{self, Blasted};
+use crate::blast::{self, Bits, Blasted};
 use crate::config::{CompilerOptions, UnboundedInts};
 use crate::diagnostic::Diagnostic;
 use crate::domain::{self, Ext, Interval};
 use crate::ir::{Constant, Sort, Term, TermId, TermStore};
-use crate::source::{SourceFile, Span};
+use crate::source::{SourceFile, SourceMap, Span};
 use crate::{Answer, AskFn, SolverFactory, TraceFn};
 
 /// A requirement accumulated by the program.
@@ -23,6 +23,12 @@ use crate::{Answer, AskFn, SolverFactory, TraceFn};
 pub(crate) struct Constraint {
     pub term: TermId,
     pub span: Span,
+    /// Where `--verbose` reports its cost: `span`, or for a constraint made inside the standard
+    /// library, the call in the program that led to it.
+    pub site: Span,
+    /// Whether a `require` statement made it; otherwise it is implicit (a divisor that must not
+    /// be 0, a value that must fit its type, …).
+    pub explicit: bool,
 }
 
 /// What a `solve` statement asks for, after its expressions have been evaluated.
@@ -40,6 +46,8 @@ pub(crate) struct SolveRequest<'a> {
     pub ask: Option<&'a AskFn>,
     /// Told about progress, for `--verbose`.
     pub trace: Option<&'a TraceFn>,
+    /// The program's files, to show source lines in `--verbose` reports.
+    pub sources: &'a SourceMap,
     /// Asked whether to stop.
     pub cancel: Option<&'a crate::CancelFn>,
 }
@@ -217,6 +225,161 @@ fn trace_unknowns(
     ));
 }
 
+/// The most source lines the cost report lists; the others are summed up in one row.
+const TRACED_COST_LINES: usize = 24;
+
+/// One row of the cost report: a source line, or what has none.
+struct CostRow {
+    /// Sorts rows in program order (the line's position); implicit rows go last.
+    position: usize,
+    /// `12`, or `<prelude>:40` for a line of another file.
+    line: String,
+    source: String,
+    cost: Cost,
+}
+
+fn add_cost(total: &mut Cost, cost: &Cost) {
+    total.unknowns += cost.unknowns;
+    total.requirements += cost.requirements;
+    total.free += cost.free;
+    total.inputs += cost.inputs;
+    total.gates += cost.gates;
+    total.clauses += cost.clauses;
+}
+
+/// Reports, for `--verbose`, what each source line added to the circuit, like a database's
+/// query plan with costs: unknowns, requirements, circuit inputs (decision bits), AND gates and
+/// clauses, and each line's share of the clauses. A line run several times (in a loop, or a
+/// function called from several places) shows how many times. Circuitry shared by several
+/// lines counts at the first one that needs it.
+fn trace_costs(trace: &dyn Fn(String), sources: &SourceMap, costs: &[Cost]) {
+    let main = sources.file_at(0).name();
+    let mut rows: std::collections::BTreeMap<usize, CostRow> = std::collections::BTreeMap::new();
+    for cost in costs {
+        let row = match cost.span {
+            Some(span) => {
+                let file = sources.file_at(span.start);
+                let (line, _) = file.line_col(span.start);
+                let position = file.line_end(line);
+                rows.entry(position).or_insert_with(|| CostRow {
+                    position,
+                    line: if file.name() == main {
+                        line.to_string()
+                    } else {
+                        format!("{}:{line}", file.name())
+                    },
+                    source: file
+                        .line_text(line)
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    cost: Cost::default(),
+                })
+            }
+            None => rows.entry(usize::MAX).or_insert_with(|| CostRow {
+                position: usize::MAX,
+                line: String::new(),
+                source: "(implicit: divisions and targets only the search needs)".to_string(),
+                cost: Cost::default(),
+            }),
+        };
+        add_cost(&mut row.cost, cost);
+    }
+    let mut rows: Vec<CostRow> = rows
+        .into_values()
+        .filter(|row| row.cost != Cost::default())
+        .collect();
+    let mut total = Cost::default();
+    for row in &rows {
+        add_cost(&mut total, &row.cost);
+    }
+    if rows.len() > TRACED_COST_LINES {
+        // Keep the costliest lines, in program order, and sum up the rest.
+        rows.sort_by_key(|row| std::cmp::Reverse(row.cost.clauses + row.cost.gates));
+        let rest = rows.split_off(TRACED_COST_LINES - 1);
+        let mut summary = CostRow {
+            position: usize::MAX - 1,
+            line: String::new(),
+            source: format!("… {} more lines", rest.len()),
+            cost: Cost::default(),
+        };
+        for row in &rest {
+            add_cost(&mut summary.cost, &row.cost);
+        }
+        rows.push(summary);
+        rows.sort_by_key(|row| row.position);
+    }
+
+    trace(
+        "  cost       by source line (shared circuitry counts at the first line needing it)"
+            .to_string(),
+    );
+    trace(format!(
+        "             {:>6}  {:>8}  {:>6}  {:>9}  {:>10}  {:>10}  {:>5}  source",
+        "line", "unknowns", "times", "inputs", "AND gates", "clauses", "share"
+    ));
+    let count = |n: usize| if n == 0 { String::new() } else { grouped(n) };
+    let mut any_free = false;
+    for row in &rows {
+        let free = row.cost.requirements > 0
+            && row.cost.free == row.cost.requirements
+            && row.cost.clauses == 0;
+        any_free |= free;
+        let share = if free {
+            "free".to_string()
+        } else if total.clauses == 0 {
+            String::new()
+        } else {
+            #[allow(clippy::cast_precision_loss)]
+            let percent = row.cost.clauses as f64 * 100.0 / total.clauses as f64;
+            format!("{percent:.0}%")
+        };
+        let times = if row.cost.requirements > 1 {
+            format!("×{}", row.cost.requirements)
+        } else {
+            String::new()
+        };
+        trace(format!(
+            "             {:>6}  {:>8}  {:>6}  {:>9}  {:>10}  {:>10}  {:>5}  {}",
+            row.line,
+            count(row.cost.unknowns),
+            times,
+            grouped(row.cost.inputs),
+            grouped(row.cost.gates),
+            grouped(row.cost.clauses),
+            share,
+            truncated(&row.source, 60)
+        ));
+    }
+    if any_free {
+        trace(
+            "             free: folded into the inferred ranges (it may narrow the unknowns), so it needs no circuit".to_string(),
+        );
+    }
+}
+
+/// `1234567` as `1,234,567`.
+fn grouped(n: usize) -> String {
+    let digits = n.to_string();
+    let mut text = String::with_capacity(digits.len() + digits.len() / 3);
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index) % 3 == 0 {
+            text.push(',');
+        }
+        text.push(digit);
+    }
+    text
+}
+
+/// `text`, cut to `width` characters with an ellipsis.
+fn truncated(text: &str, width: usize) -> String {
+    if text.chars().count() <= width {
+        text.to_string()
+    } else {
+        format!("{}…", text.chars().take(width - 1).collect::<String>())
+    }
+}
+
 fn plural(count: usize) -> &'static str {
     if count == 1 { "" } else { "s" }
 }
@@ -362,6 +525,9 @@ pub(crate) fn solve(
             attempt.cs.solver().num_clauses(),
             stats.build
         ));
+        if request.trace.is_some() {
+            trace_costs(&trace, request.sources, &attempt.costs);
+        }
         trace(format!("  search     with {}…", attempt.cs.solver().name()));
         let searching = Instant::now();
         let calls_before = stats.sat_calls;
@@ -550,6 +716,157 @@ struct Attempt<'a> {
     blasted: Blasted,
     sat_calls: u32,
     solutions: u64,
+    /// What each part of the program added to the circuit, for `--verbose`.
+    costs: Vec<Cost>,
+}
+
+/// What one part of the program added to the circuit and its CNF: an unknown (its bits), a
+/// requirement, or the solver's implicit side conditions. Circuitry shared by several parts
+/// counts for the first one that needs it, in program order.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Cost {
+    /// Where it comes from; `None` for implicit side conditions (e.g. of divisions) and for
+    /// circuitry only the solve targets or objective need.
+    pub span: Option<Span>,
+    pub unknowns: usize,
+    pub requirements: usize,
+    /// Requirements the inferred ranges decide (always true): they cost nothing.
+    pub free: usize,
+    /// New circuit inputs: an unknown's bits, or auxiliary bits such as a division's quotient.
+    pub inputs: usize,
+    pub gates: usize,
+    pub clauses: usize,
+}
+
+/// Marks the not yet `claimed` nodes of the cones of `edges` as claimed and counts them:
+/// (AND gates, inputs).
+fn claim(aig: &Aig, edges: &[Edge], claimed: &mut [bool]) -> (usize, usize) {
+    let (mut gates, mut inputs) = (0, 0);
+    let mut pending: Vec<_> = edges.iter().map(|edge| edge.node()).collect();
+    while let Some(node) = pending.pop() {
+        if std::mem::replace(&mut claimed[node.index()], true) {
+            continue;
+        }
+        match aig.node(node) {
+            Node::And(a, b) => {
+                gates += 1;
+                pending.extend([a.node(), b.node()]);
+            }
+            Node::Input(_) => inputs += 1,
+            Node::False => {}
+        }
+    }
+    (gates, inputs)
+}
+
+/// The edges of the circuits of `terms` (the bits of integers).
+fn edges_of(blasted: &Blasted, terms: &[TermId]) -> Vec<Edge> {
+    let mut edges = Vec::new();
+    for bits in terms.iter().filter_map(|&term| blasted.get(term)) {
+        match bits {
+            Bits::Bool(edge) => edges.push(*edge),
+            Bits::Int(int) => edges.extend_from_slice(int.bits()),
+        }
+    }
+    edges
+}
+
+/// Encodes the requirements, then the side constraints, into `cs` (always in this order: the
+/// order of clauses steers the solver), measuring what each part of the program adds. Each
+/// part is charged the circuitry that no earlier part needed: first come, first charged.
+///
+/// - An unknown is charged its bits, and the side constraints keeping it in its domain.
+/// - A requirement is charged its expression's circuitry, and the definitions of the divisions
+///   in that expression (`x % m` is defined by a quotient times `m`).
+/// - What only the solve targets or the objective need is left over, in a row of its own (it
+///   is encoded later, as the search asks about it).
+///
+/// The encoding is lazy (only gates not encoded yet produce clauses), so measuring around each
+/// `require` gives each part's clauses.
+fn encode_by_part(
+    store: &TermStore,
+    constraints: &[Constraint],
+    required: &[TermId],
+    roots: &[TermId],
+    blasted: &Blasted,
+    cs: &mut CircuitSolver<Box<dyn Solver>>,
+) -> Vec<Cost> {
+    debug_assert_eq!(required.len(), constraints.len());
+    let mut claimed = vec![false; cs.aig().num_nodes()];
+    // Claims `edges`, requires them and returns what that added: (inputs, gates, clauses).
+    let encode =
+        |cs: &mut CircuitSolver<Box<dyn Solver>>, edges: &[Edge], claimed: &mut [bool]| {
+            let (gates, inputs) = claim(cs.aig(), edges, claimed);
+            let before = cs.solver().num_clauses();
+            for &edge in edges {
+                cs.require(edge);
+            }
+            (inputs, gates, cs.solver().num_clauses() - before)
+        };
+    let charge = |cost: &mut Cost, (inputs, gates, clauses): (usize, usize, usize)| {
+        cost.inputs += inputs;
+        cost.gates += gates;
+        cost.clauses += clauses;
+    };
+
+    // Unknowns: their bits.
+    let mut costs = Vec::new();
+    let mut row_of_unknown = vec![None; store.unknowns().len()];
+    for (index, unknown) in store.unknowns().iter().enumerate() {
+        let bits = match blasted.get(unknown.term) {
+            Some(Bits::Bool(edge)) => std::slice::from_ref(edge),
+            Some(Bits::Int(int)) => int.bits(),
+            None => continue,
+        };
+        let (_, inputs) = claim(cs.aig(), bits, &mut claimed);
+        row_of_unknown[index] = Some(costs.len());
+        costs.push(Cost {
+            span: Some(unknown.span),
+            unknowns: 1,
+            inputs,
+            ..Cost::default()
+        });
+    }
+
+    // Requirements, in program order. Each term belongs to the first requirement needing it.
+    let mut owner: Vec<Option<usize>> = vec![None; store.len()];
+    let mut row_of_requirement = Vec::with_capacity(required.len());
+    for (index, (&term, constraint)) in required.iter().zip(constraints).enumerate() {
+        let mut pending = vec![term];
+        while let Some(id) = pending.pop() {
+            if owner[id.index()].is_none() {
+                owner[id.index()] = Some(index);
+                pending.extend(store.term(id).operands());
+            }
+        }
+        let edge = blasted.of(term).edge();
+        let explicit = usize::from(constraint.explicit);
+        let mut cost = Cost {
+            span: Some(constraint.site),
+            requirements: explicit,
+            free: explicit * usize::from(edge == Edge::TRUE),
+            ..Cost::default()
+        };
+        charge(&mut cost, encode(cs, &[edge], &mut claimed));
+        row_of_requirement.push(costs.len());
+        costs.push(cost);
+    }
+
+    // Side constraints, charged to the unknown or requirement that needs them.
+    let leftover = costs.len();
+    costs.push(Cost::default());
+    for &(origin, edge) in &blasted.side_constraints {
+        let row = match store.term(origin) {
+            Term::Unknown(unknown) => row_of_unknown[unknown.index()],
+            _ => owner[origin.index()].map(|index| row_of_requirement[index]),
+        };
+        let added = encode(cs, &[edge], &mut claimed);
+        charge(&mut costs[row.unwrap_or(leftover)], added);
+    }
+    // Whatever only the targets or the objective need.
+    let (gates, inputs) = claim(cs.aig(), &edges_of(blasted, roots), &mut claimed);
+    charge(&mut costs[leftover], (inputs, gates, 0));
+    costs
 }
 
 impl<'a> Attempt<'a> {
@@ -564,12 +881,8 @@ impl<'a> Attempt<'a> {
         let sizes = domain::forward_sizes(store, domains);
         let mut cs = CircuitSolver::new(factory());
         let blasted = blast::blast(store, &sizes, domains, roots, cs.aig_mut());
-        for &term in required {
-            cs.require(blasted.of(term).edge());
-        }
-        for &edge in &blasted.side_constraints {
-            cs.require(edge);
-        }
+
+        let costs = encode_by_part(store, constraints, required, roots, &blasted, &mut cs);
         Self {
             store,
             domains,
@@ -578,6 +891,7 @@ impl<'a> Attempt<'a> {
             blasted,
             sat_calls: 0,
             solutions: 0,
+            costs,
         }
     }
 
@@ -834,7 +1148,7 @@ fn explain(
 
     let mut cs = CircuitSolver::new(factory());
     let blasted = blast::blast(store, &sizes, &domains, &roots, cs.aig_mut());
-    for &edge in &blasted.side_constraints {
+    for &(_, edge) in &blasted.side_constraints {
         cs.require(edge);
     }
     let mut selectors = Vec::with_capacity(groups.len());

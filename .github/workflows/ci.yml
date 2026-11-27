@@ -12,7 +12,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install libclang (for the CaDiCaL bindings)
-        run: sudo apt-get update && sudo apt-get install -y libclang-dev
+        # The runner image lists third-party apt repositories that are sometimes unavailable;
+        # their errors must not fail the build, only a missing libclang-dev may.
+        run: |
+          sudo apt-get update -o Acquire::Retries=3 || echo "apt-get update reported errors; continuing"
+          sudo apt-get install -y libclang-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy

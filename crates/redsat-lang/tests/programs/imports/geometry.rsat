@@ -1,0 +1,8 @@
+// A module: only functions, enums and structs.
+import "lib/squares.rsat"
+
+struct Point { x: int[-10..=10], y: int[-10..=10] }
+
+fn distance_squared(a: Point, b: Point) -> int {
+    return square(a.x - b.x) + square(a.y - b.y)
+}

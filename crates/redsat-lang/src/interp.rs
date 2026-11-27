@@ -32,7 +32,7 @@ use crate::diagnostic::Diagnostic;
 use crate::domain::Interval;
 use crate::ir::{BitOp, Constant, Sort, TermId, TermStore, euclid};
 use crate::solve::{self, Constraint, SolveOutcome, SolveRequest, SolveStats};
-use crate::source::{SourceFile, Span};
+use crate::source::{SourceMap, Span};
 use crate::{AskFn, SolverFactory};
 
 type Result<T> = std::result::Result<T, Diagnostic>;
@@ -141,7 +141,7 @@ enum Accessor {
 }
 
 pub(crate) struct Interpreter<'a> {
-    source: &'a SourceFile,
+    sources: &'a SourceMap,
     options: &'a CompilerOptions,
     types: &'a TypeInfo,
     factory: &'a SolverFactory,
@@ -165,7 +165,7 @@ pub(crate) struct Interpreter<'a> {
 
 impl<'a> Interpreter<'a> {
     pub(crate) fn new(
-        source: &'a SourceFile,
+        sources: &'a SourceMap,
         options: &'a CompilerOptions,
         types: &'a TypeInfo,
         factory: &'a SolverFactory,
@@ -173,7 +173,7 @@ impl<'a> Interpreter<'a> {
         ask: Option<&'a AskFn>,
     ) -> Self {
         Self {
-            source,
+            sources,
             options,
             types,
             factory,
@@ -255,7 +255,7 @@ impl<'a> Interpreter<'a> {
             StmtKind::Expr(expr) => {
                 self.eval(expr)?;
             }
-            StmtKind::Fn(_) | StmtKind::Enum(_) | StmtKind::Struct(_) => {}
+            StmtKind::Fn(_) | StmtKind::Enum(_) | StmtKind::Struct(_) | StmtKind::Import(_) => {}
         }
         Ok(Flow::Next)
     }
@@ -813,7 +813,7 @@ impl<'a> Interpreter<'a> {
     fn label(&self, expr: &Expr) -> String {
         match &expr.kind {
             ExprKind::Var(ident) => ident.name.clone(),
-            _ => self.source.slice(expr.span).to_string(),
+            _ => self.sources.slice(expr.span).to_string(),
         }
     }
 
@@ -831,7 +831,7 @@ impl<'a> Interpreter<'a> {
                         range.span,
                         format!(
                             "the range `{}` contains no values",
-                            self.source.slice(range.span)
+                            self.sources.slice(range.span)
                         ),
                     )
                     .with_note("`lo..hi` excludes `hi`, while `lo..=hi` includes it"));
@@ -1180,7 +1180,10 @@ impl<'a> Interpreter<'a> {
                 self.forbid_in_solve_body("`?`", expr.span)?;
                 let ty = self.types.hole_type(expr.span).clone();
                 let shape = self.shape_of_type(&ty, expr.span)?;
-                let (line, column) = self.source.line_col(expr.span.start);
+                let (line, column) = self
+                    .sources
+                    .file_at(expr.span.start)
+                    .line_col(expr.span.start);
                 self.new_unknown(&format!("?{line}:{column}"), &shape, expr.span)
             }
             ExprKind::Unary(op, operand) => {
@@ -1322,6 +1325,14 @@ impl<'a> Interpreter<'a> {
                 let (a, b) = (self.bool_term(&left), self.bool_term(&right));
                 let term = self.store.xor(a, b);
                 Ok(self.bool_value(term))
+            }
+            BinaryOp::Add if matches!(left, Value::Array(_)) => {
+                let (Value::Array(a), Value::Array(b)) = (&left, &right) else {
+                    unreachable!("type checked as arrays")
+                };
+                Ok(Value::Array(Rc::new(
+                    a.iter().chain(b.iter()).cloned().collect(),
+                )))
             }
             BinaryOp::Add if matches!(left, Value::Str(_) | Value::SymStr(_)) => {
                 Ok(self.concat(&left, &right))
@@ -2299,7 +2310,16 @@ impl<'a> Interpreter<'a> {
         let saved = std::mem::replace(&mut self.scopes, vec![Scope::default()]);
         let result = self.run_function(decl, args, span);
         self.scopes = saved;
-        result
+        // Point from errors inside the function back to the call (a short call stack).
+        result.map_err(|error| {
+            let repeated =
+                error.span == span || error.related.iter().any(|(related, _)| *related == span);
+            if error.message == ANALYSIS_TIMEOUT || error.related.len() >= 4 || repeated {
+                error
+            } else {
+                error.with_related(span, format!("in this call to `{}`", decl.name.name))
+            }
+        })
     }
 
     fn run_function(&mut self, decl: &Rc<FnDecl>, args: Vec<Value>, span: Span) -> Result<Value> {
@@ -2499,9 +2519,9 @@ pub(crate) struct AnalysisState {
 }
 
 impl AnalysisState {
-    pub(crate) fn new(deadline: Instant) -> Self {
+    pub(crate) fn new(budget: std::time::Duration) -> Self {
         Self {
-            deadline,
+            deadline: Instant::now() + budget,
             seen: HashSet::new(),
             groups: Vec::new(),
         }
@@ -2526,7 +2546,7 @@ impl AnalysisState {
     }
 
     /// The inferred domains, one per declaration.
-    pub(crate) fn finish(self, source: &SourceFile) -> Vec<crate::InferredDomain> {
+    pub(crate) fn finish(self, sources: &SourceMap) -> Vec<crate::InferredDomain> {
         self.groups
             .into_iter()
             .map(|(span, sort, domain, unknowns)| {
@@ -2536,7 +2556,7 @@ impl AnalysisState {
                 };
                 crate::InferredDomain {
                     span,
-                    name: source.slice(span).to_string(),
+                    name: sources.slice(span).to_string(),
                     domain,
                     width,
                     unknowns,

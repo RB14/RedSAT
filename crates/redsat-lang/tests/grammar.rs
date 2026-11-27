@@ -6,7 +6,9 @@
 
 use std::collections::BTreeSet;
 
-use redsat_lang::syntax::{BUILTIN_FUNCTIONS, BUILTIN_TYPES, CONTEXTUAL_KEYWORDS, KEYWORDS};
+use redsat_lang::syntax::{
+    BUILTIN_FUNCTIONS, BUILTIN_TYPES, CONTEXTUAL_KEYWORDS, KEYWORDS, PRELUDE_FUNCTIONS,
+};
 use serde_json::Value;
 
 /// Every word listed in a plain alternation group, such as `(?:if|else)` or `(bool|int)`,
@@ -59,6 +61,7 @@ fn language_words() -> BTreeSet<String> {
         CONTEXTUAL_KEYWORDS,
         BUILTIN_TYPES,
         BUILTIN_FUNCTIONS,
+        PRELUDE_FUNCTIONS,
     ]
     .into_iter()
     .flatten()
@@ -87,5 +90,22 @@ fn the_grammar_highlights_no_word_the_language_lacks() {
     assert!(
         extra.is_empty(),
         "the VS Code grammar highlights unknown words: {extra:?}"
+    );
+}
+
+#[test]
+fn the_prelude_list_matches_the_prelude() {
+    let defined: BTreeSet<String> = redsat_lang::load::PRELUDE
+        .lines()
+        .filter_map(|line| line.strip_prefix("fn "))
+        .map(|rest| rest.split('(').next().expect("a name").to_string())
+        .collect();
+    let listed: BTreeSet<String> = PRELUDE_FUNCTIONS
+        .iter()
+        .map(|name| (*name).to_string())
+        .collect();
+    assert_eq!(
+        defined, listed,
+        "syntax::PRELUDE_FUNCTIONS must list exactly the prelude's functions"
     );
 }

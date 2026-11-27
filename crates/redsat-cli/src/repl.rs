@@ -163,9 +163,9 @@ fn execute(
     let mut errors = Vec::new();
     for diagnostic in &outcome.diagnostics {
         if diagnostic.severity == Severity::Error {
-            errors.push(diagnostic.render(&source));
+            errors.push(diagnostic.render(&outcome.sources));
         } else {
-            output.push_str(&diagnostic.render(&source));
+            output.push_str(&diagnostic.render(&outcome.sources));
         }
     }
     (output, errors)

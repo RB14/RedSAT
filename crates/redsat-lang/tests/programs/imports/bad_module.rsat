@@ -1,0 +1,2 @@
+fn ok() -> int { return 1 }
+print "modules cannot run statements"

@@ -1,0 +1,13 @@
+-1 0 1 10 0 true true false
+12 [4, 0, 9, 6] 19 1 8
+true false true
+2 42 true true false
+true true true 2 -1
+true false true [1, 2, 3] true
+true true false true Q q 8
+true true 3 [1, 2, 3]
+n = 1234
+w = "abqaba"
+xs = [7, 2, 5]
+xs = [7, 5, 2]
+xs = [5, 7, 2]

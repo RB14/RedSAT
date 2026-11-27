@@ -1,0 +1,231 @@
+// The RedSAT standard library prelude.
+//
+// These functions are available in every program. They are ordinary RedSAT functions, inlined
+// at each call like your own, so they work on known values and on unknowns alike. The native
+// built-ins (sum, count, all, any, min, max, len, abs, all_different, reverse, ord, chr) are
+// implemented inside the compiler.
+
+// --- numbers -----------------------------------------------------------------------------------
+
+/// -1, 0 or 1: the sign of `x`.
+fn sign(x: int) -> int {
+    if x > 0 { return 1 }
+    if x < 0 { return -1 }
+    return 0
+}
+
+/// `x`, limited to the range `lo..=hi`.
+fn clamp(x: int, lo: int, hi: int) -> int {
+    return min(max(x, lo), hi)
+}
+
+/// Whether `d` divides `n` (`d` must not be 0).
+fn divides(d: int, n: int) -> bool {
+    return n % d == 0
+}
+
+/// Whether `x` is even.
+fn is_even(x: int) -> bool {
+    return x % 2 == 0
+}
+
+/// Whether `x` is odd.
+fn is_odd(x: int) -> bool {
+    return x % 2 == 1
+}
+
+/// The greatest common divisor of two known numbers.
+fn gcd(a: int, b: int) -> int {
+    if b == 0 { return abs(a) }
+    return gcd(b, a % b)
+}
+
+/// The `k` decimal digits of `n`, most significant first (`n` has at most `k` digits).
+fn digits(n: int, k: int) -> [int] {
+    return [n / 10 ^ (k - 1 - i) % 10 for i in 0..k]
+}
+
+/// The sum of the `k` decimal digits of `n`.
+fn digit_sum(n: int, k: int) -> int {
+    return sum(digits(n, k))
+}
+
+/// Bit `i` of `x`: 0 or 1.
+fn bit(x: int, i: int) -> int {
+    return (x >> i) & 1
+}
+
+/// The number of one bits among the lowest `width` bits of `x`.
+fn popcount(x: int, width: int) -> int {
+    return sum(bit(x, i) for i in 0..width)
+}
+
+// --- counting ----------------------------------------------------------------------------------
+
+/// Whether exactly `k` of the conditions hold.
+fn exactly(k: int, conditions: [bool]) -> bool {
+    return count(conditions) == k
+}
+
+/// Whether at least `k` of the conditions hold.
+fn at_least(k: int, conditions: [bool]) -> bool {
+    return count(conditions) >= k
+}
+
+/// Whether at most `k` of the conditions hold.
+fn at_most(k: int, conditions: [bool]) -> bool {
+    return count(conditions) <= k
+}
+
+/// How many elements of `xs` equal `value`.
+fn count_of(xs: [int], value: int) -> int {
+    return count(x == value for x in xs)
+}
+
+// --- arrays ------------------------------------------------------------------------------------
+
+/// The product of the elements.
+fn product(xs: [int]) -> int {
+    var result = 1
+    for x in xs {
+        result = result * x
+    }
+    return result
+}
+
+/// Whether all elements are equal.
+fn all_equal(xs: [int]) -> bool {
+    return all(xs[i] == xs[0] for i in 1..len(xs))
+}
+
+/// Whether each element is at most the next one.
+fn increasing(xs: [int]) -> bool {
+    return all(xs[i - 1] <= xs[i] for i in 1..len(xs))
+}
+
+/// Whether each element is smaller than the next one.
+fn strictly_increasing(xs: [int]) -> bool {
+    return all(xs[i - 1] < xs[i] for i in 1..len(xs))
+}
+
+/// Whether each element is at least the next one.
+fn decreasing(xs: [int]) -> bool {
+    return all(xs[i - 1] >= xs[i] for i in 1..len(xs))
+}
+
+/// Whether each element is larger than the next one.
+fn strictly_decreasing(xs: [int]) -> bool {
+    return all(xs[i - 1] > xs[i] for i in 1..len(xs))
+}
+
+/// Whether no two elements are equal, except for copies of `ignored` (e.g. 0 for "empty").
+fn all_different_except(xs: [int], ignored: int) -> bool {
+    return all(xs[i] != xs[j] or xs[i] == ignored for i in 0..len(xs) for j in i + 1..len(xs))
+}
+
+/// The first position of `value` in `xs`, or -1.
+fn index_of(xs: [int], value: int) -> int {
+    var found = -1
+    for i in 0..len(xs) {
+        var k = len(xs) - 1 - i
+        found = if xs[k] == value { k } else { found }
+    }
+    return found
+}
+
+/// Whether `xs` comes before `ys` in lexicographic order (useful to break symmetries).
+fn lex_less(xs: [int], ys: [int]) -> bool {
+    var less = false
+    var equal = true
+    for i in 0..min(len(xs), len(ys)) {
+        less = less or (equal and xs[i] < ys[i])
+        equal = equal and xs[i] == ys[i]
+    }
+    return less or (equal and len(xs) < len(ys))
+}
+
+/// Whether `xs` comes before or equals `ys` in lexicographic order.
+fn lex_less_eq(xs: [int], ys: [int]) -> bool {
+    var less = false
+    var equal = true
+    for i in 0..min(len(xs), len(ys)) {
+        less = less or (equal and xs[i] < ys[i])
+        equal = equal and xs[i] == ys[i]
+    }
+    return less or (equal and len(xs) <= len(ys))
+}
+
+/// The elements in increasing order: an odd–even transposition sorting network, which works on
+/// unknown elements too.
+fn sorted(xs: [int]) -> [int] {
+    var a = xs
+    var n = len(a)
+    for round in 0..n {
+        var first = round % 2
+        for j in 0..(n - first) / 2 {
+            var i = first + 2 * j
+            var low = min(a[i], a[i + 1])
+            var high = max(a[i], a[i + 1])
+            a[i] = low
+            a[i + 1] = high
+        }
+    }
+    return a
+}
+
+/// Whether `ys` is a rearrangement of `xs`.
+fn is_permutation(xs: [int], ys: [int]) -> bool {
+    return len(xs) == len(ys) and sorted(xs) == sorted(ys)
+}
+
+// --- characters and strings ----------------------------------------------------------------------
+
+/// Whether `c` is one of '0'…'9'.
+fn is_digit(c: char) -> bool {
+    return c in '0'..='9'
+}
+
+/// Whether `c` is one of 'a'…'z'.
+fn is_lower(c: char) -> bool {
+    return c in 'a'..='z'
+}
+
+/// Whether `c` is one of 'A'…'Z'.
+fn is_upper(c: char) -> bool {
+    return c in 'A'..='Z'
+}
+
+/// Whether `c` is an ASCII letter.
+fn is_letter(c: char) -> bool {
+    return is_lower(c) or is_upper(c)
+}
+
+/// `c` in upper case (ASCII letters only).
+fn to_upper(c: char) -> char {
+    return if is_lower(c) { chr(ord(c) - 32) } else { c }
+}
+
+/// `c` in lower case (ASCII letters only).
+fn to_lower(c: char) -> char {
+    return if is_upper(c) { chr(ord(c) + 32) } else { c }
+}
+
+/// The value of a digit character: '7' → 7.
+fn digit_value(c: char) -> int {
+    return ord(c) - ord('0')
+}
+
+/// Whether `s` starts with `prefix` (whose length must be known).
+fn starts_with(s: string, prefix: string) -> bool {
+    return len(prefix) <= len(s) and all(s[i] == prefix[i] for i in 0..len(prefix))
+}
+
+/// Whether `s` ends with `suffix` (whose length must be known).
+fn ends_with(s: string, suffix: string) -> bool {
+    return len(suffix) <= len(s) and all(s[len(s) - len(suffix) + i] == suffix[i] for i in 0..len(suffix))
+}
+
+/// How many times `c` occurs in `s`.
+fn count_char(s: string, c: char) -> int {
+    return count(x == c for x in s)
+}

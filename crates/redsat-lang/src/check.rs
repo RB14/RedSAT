@@ -398,10 +398,10 @@ impl Checker<'_> {
                         .with_help(format!("give the {what} another name")),
                 );
             } else if names.insert(ident.name.clone(), ident.span).is_some() {
-                this.error(Diagnostic::error(
-                    ident.span,
-                    format!("`{}` is declared twice", ident.name),
-                ));
+                this.error(
+                    Diagnostic::error(ident.span, format!("`{}` is declared twice", ident.name))
+                        .with_help(format!("give the {what} another name")),
+                );
             }
         };
         for stmt in stmts {
@@ -751,7 +751,13 @@ impl Checker<'_> {
                     "structs must be declared at the top level",
                 ));
             }
-            StmtKind::Enum(_) | StmtKind::Struct(_) => {}
+            StmtKind::Import(_) if !top_level => {
+                self.error(Diagnostic::error(
+                    stmt.span,
+                    "imports must be at the top level",
+                ));
+            }
+            StmtKind::Enum(_) | StmtKind::Struct(_) | StmtKind::Import(_) => {}
         }
     }
 
@@ -1139,6 +1145,13 @@ impl Checker<'_> {
     fn binary(&mut self, op: BinaryOp, lhs: &Expr, rhs: &Expr) -> Ty {
         let (lhs_ty, rhs_ty) = (self.expr(lhs), self.expr(rhs));
         match op {
+            BinaryOp::Add
+                if matches!(self.resolve(&lhs_ty), Ty::Array(_))
+                    || matches!(self.resolve(&rhs_ty), Ty::Array(_)) =>
+            {
+                // `+` joins two arrays.
+                self.unify(&lhs_ty, &rhs_ty, rhs.span)
+            }
             BinaryOp::Add => {
                 // `+` concatenates when either side is known to be a string, and adds otherwise.
                 if self.resolve(&lhs_ty) == Ty::Str || self.resolve(&rhs_ty) == Ty::Str {

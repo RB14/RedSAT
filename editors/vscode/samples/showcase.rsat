@@ -85,15 +85,15 @@ var unique = all + 1            // ...and so is `unique`
 var limit = 10                  // contextual: highlighted, but a legal identifier
 
 // ---- Functions ----------------------------------------------------------------------------
-fn clamp(v: int, lo: int, hi: int) -> int {
+fn squash(v: int, lo: int, hi: int) -> int {
     if v < lo { return lo }
     return min(max(v, lo), hi)
 }
-require clamp(x, 0, 9) == helper(y)
+require squash(x, 0, 9) == helper(y)
 
 // ---- Strings and chars --------------------------------------------------------------------
 print "escapes: \n \t \r \0 \\ \" \{ not interpolated \} and a bad one: \q"
-print "nested: {clamp(x, 0, len("abc"))} and {queen[0] + 1}"
+print "nested: {squash(x, 0, len("abc"))} and {queen[0] + 1}"
 var newline = '\n'
 var quote = '\''
 var brace = '{'

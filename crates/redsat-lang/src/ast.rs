@@ -101,6 +101,8 @@ pub enum StmtKind {
     Enum(EnumDecl),
     /// `struct Name { field: T, … }`
     Struct(StructDecl),
+    /// `import "file.rsat"`: the functions, enums and structs of another file.
+    Import(String),
 }
 
 /// An assignable location: a variable followed by indexing and field accesses.

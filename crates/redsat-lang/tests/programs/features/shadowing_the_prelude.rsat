@@ -1,0 +1,5 @@
+// Your own functions take precedence over the standard library's.
+fn sign(x: int) -> int {
+    return 42
+}
+print sign(-3)

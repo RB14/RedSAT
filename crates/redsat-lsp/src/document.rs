@@ -99,7 +99,10 @@ impl Document {
         );
         let options = options_for(path.as_ref());
         let index = LineIndex::new(&text);
-        let source = SourceFile::new(name, text);
+        let mut source = SourceFile::new(name, text);
+        if let Some(path) = &path {
+            source = source.with_path(path);
+        }
         let analysis = redsat_lang::analyze(&source, &options, ANALYSIS_BUDGET);
         let has_errors = analysis
             .diagnostics

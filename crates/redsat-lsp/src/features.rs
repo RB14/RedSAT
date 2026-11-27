@@ -29,9 +29,25 @@ pub fn diagnostics(document: &Document, uri: &Uri) -> Vec<LspDiagnostic> {
                 message.push('\n');
                 message.push_str(note);
             }
+            // Diagnostics inside another file (an import, the prelude) are shown where the open
+            // document leads to them: the first related place in this file.
+            let in_document = |span: &Span| span.end <= document.text().len();
+            let primary = if in_document(&d.span) {
+                d.span
+            } else {
+                let elsewhere = document.analysis.sources.file_at(d.span.start);
+                let (line, column) = elsewhere.line_col(d.span.start);
+                message = format!("{message}\n(in {}:{line}:{column})", elsewhere.name());
+                d.related
+                    .iter()
+                    .map(|(span, _)| *span)
+                    .find(in_document)
+                    .unwrap_or_default()
+            };
             let related: Vec<DiagnosticRelatedInformation> = d
                 .related
                 .iter()
+                .filter(|(span, _)| in_document(span))
                 .map(|(span, label)| DiagnosticRelatedInformation {
                     location: Location::new(uri.clone(), document.range(*span)),
                     message: if label.is_empty() {
@@ -42,7 +58,7 @@ pub fn diagnostics(document: &Document, uri: &Uri) -> Vec<LspDiagnostic> {
                 })
                 .collect();
             LspDiagnostic {
-                range: document.range(d.span),
+                range: document.range(primary),
                 severity: Some(match d.severity {
                     Severity::Error => DiagnosticSeverity::ERROR,
                     Severity::Warning => DiagnosticSeverity::WARNING,
@@ -55,6 +71,21 @@ pub fn diagnostics(document: &Document, uri: &Uri) -> Vec<LspDiagnostic> {
             }
         })
         .collect()
+}
+
+/// The doc comment (`/// …` lines) of a standard library function.
+fn prelude_doc(name: &str) -> Option<String> {
+    let lines: Vec<&str> = redsat_lang::load::PRELUDE.lines().collect();
+    let declaration = lines
+        .iter()
+        .position(|line| line.starts_with(&format!("fn {name}(")))?;
+    let doc: Vec<&str> = lines[..declaration]
+        .iter()
+        .rev()
+        .take_while(|line| line.starts_with("///"))
+        .map(|line| line.trim_start_matches('/').trim())
+        .collect();
+    (!doc.is_empty()).then(|| doc.into_iter().rev().collect::<Vec<_>>().join(" "))
 }
 
 fn is_ident(c: char) -> bool {
@@ -233,7 +264,15 @@ pub fn completions(document: &Document, offset: usize) -> Vec<CompletionItem> {
             SymbolKind::Enum => CompletionItemKind::ENUM,
             SymbolKind::Struct => CompletionItemKind::STRUCT,
         };
-        let mut entry = item(&symbol.name, kind, Some(symbol.detail.clone()), None);
+        let doc = (symbol.kind == SymbolKind::Function)
+            .then(|| prelude_doc(&symbol.name))
+            .flatten();
+        let mut entry = item(
+            &symbol.name,
+            kind,
+            Some(symbol.detail.clone()),
+            doc.as_deref(),
+        );
         if matches!(symbol.kind, SymbolKind::Function | SymbolKind::Struct) {
             entry.insert_text = Some(format!("{}($1)", symbol.name));
             entry.insert_text_format = Some(InsertTextFormat::SNIPPET);
@@ -439,6 +478,11 @@ fn describe(document: &Document, types: &TypeInfo, symbol: &Symbol) -> String {
         }
     };
     let mut text = format!("```rsat\n{signature}\n```");
+    if symbol.kind == SymbolKind::Function {
+        if let Some(doc) = prelude_doc(&symbol.name) {
+            text.push_str(&format!("\n\n{doc}\n\n*standard library*"));
+        }
+    }
     if let Some(domain) = document
         .analysis
         .domains
@@ -492,7 +536,9 @@ pub fn symbols(document: &Document, uri: &Uri) -> Vec<SymbolInformation> {
     types
         .symbols
         .iter()
-        .filter(|s| s.scope.start == 0 && s.scope.end == usize::MAX)
+        .filter(|s| {
+            s.scope.start == 0 && s.scope.end == usize::MAX && s.span.end <= document.text().len()
+        })
         .map(|s| SymbolInformation {
             name: s.name.clone(),
             kind: match s.kind {

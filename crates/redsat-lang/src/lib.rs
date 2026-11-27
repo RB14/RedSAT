@@ -18,6 +18,7 @@ pub mod domain;
 mod interp;
 pub mod ir;
 pub mod lexer;
+pub mod load;
 pub mod parser;
 mod solve;
 pub mod source;
@@ -29,7 +30,7 @@ pub use config::{CompilerOptions, ExplicitTypes, OptionLayer, UnboundedInts};
 pub use diagnostic::{Diagnostic, Severity};
 use redsat_sat::Solver;
 pub use solve::SolveStats;
-pub use source::{SourceFile, Span};
+pub use source::{SourceFile, SourceMap, Span};
 
 use crate::ast::Program;
 use crate::check::TypeInfo;
@@ -52,13 +53,15 @@ pub enum Answer {
 /// Asked after each solution in interactive mode, with the number of solutions shown so far.
 pub type AskFn = dyn Fn(u64) -> Answer + Sync;
 
-/// The result of running a program.
-#[derive(Debug, Default)]
+/// The result of checking or running a program.
+#[derive(Debug)]
 pub struct RunOutcome {
-    /// Errors and warnings, in the order they arose.
+    /// Errors, warnings and notes, in the order they arose.
     pub diagnostics: Vec<Diagnostic>,
     /// One entry per executed `solve`.
     pub stats: Vec<SolveStats>,
+    /// Every file of the program (main file, prelude, imports), to render diagnostics with.
+    pub sources: SourceMap,
 }
 
 impl RunOutcome {
@@ -67,14 +70,25 @@ impl RunOutcome {
     pub fn has_errors(&self) -> bool {
         self.diagnostics.iter().any(Diagnostic::is_error)
     }
+
+    /// All diagnostics, rendered with source snippets.
+    #[must_use]
+    pub fn render_diagnostics(&self) -> String {
+        self.diagnostics
+            .iter()
+            .map(|d| d.render(&self.sources))
+            .collect()
+    }
 }
 
 /// The stack size for compiling and running a program. Programs are elaborated by a
 /// tree-walking interpreter, and inlined (possibly recursive) function calls nest deeply; the
 /// memory is only reserved, not used, unless a program needs it.
+#[cfg(not(target_arch = "wasm32"))]
 const STACK_SIZE: usize = 1 << 30;
 
 /// Runs `job` on a thread with a large stack and returns its result.
+#[cfg(not(target_arch = "wasm32"))]
 fn with_large_stack<T: Send>(job: impl FnOnce() -> T + Send) -> T {
     std::thread::scope(|scope| {
         let handle = std::thread::Builder::new()
@@ -88,12 +102,26 @@ fn with_large_stack<T: Send>(job: impl FnOnce() -> T + Send) -> T {
     })
 }
 
-/// Parses and type-checks `source` without running it.
+/// WebAssembly has no threads; its stack size is set when linking instead.
+#[cfg(target_arch = "wasm32")]
+fn with_large_stack<T: Send>(job: impl FnOnce() -> T + Send) -> T {
+    job()
+}
+
+/// Parses and type-checks `source` (and the files it imports) without running it.
 #[must_use]
-pub fn check(source: &SourceFile, options: &CompilerOptions) -> Vec<Diagnostic> {
-    with_large_stack(|| match front_end(source, options) {
-        Ok((_, _, warnings)) => warnings,
-        Err(errors) => errors,
+pub fn check(source: &SourceFile, options: &CompilerOptions) -> RunOutcome {
+    with_large_stack(|| {
+        let (sources, checked) = front_end(source, options);
+        let diagnostics = match checked {
+            Ok((_, _, warnings)) => warnings,
+            Err(errors) => errors,
+        };
+        RunOutcome {
+            diagnostics,
+            stats: Vec::new(),
+            sources,
+        }
     })
 }
 
@@ -127,24 +155,29 @@ fn run_here(
     out: &mut (dyn Write + Send),
     ask: Option<&AskFn>,
 ) -> RunOutcome {
-    let (program, types, mut diagnostics) = match front_end(source, options) {
+    let (sources, checked) = front_end(source, options);
+    let (program, types, mut diagnostics) = match checked {
         Ok(checked) => checked,
         Err(diagnostics) => {
             return RunOutcome {
                 diagnostics,
                 stats: Vec::new(),
+                sources,
             };
         }
     };
-    let mut interpreter = Interpreter::new(source, options, &types, factory, out, ask);
+    let mut interpreter = Interpreter::new(&sources, options, &types, factory, out, ask);
     let result = interpreter.run(&program);
     diagnostics.append(&mut interpreter.warnings);
     if let Err(error) = result {
         diagnostics.push(error);
     }
+    let stats = std::mem::take(&mut interpreter.stats);
+    drop(interpreter);
     RunOutcome {
         diagnostics,
-        stats: interpreter.stats,
+        stats,
+        sources,
     }
 }
 
@@ -165,7 +198,7 @@ pub struct InferredDomain {
 }
 
 /// What editor tooling needs to know about a program.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Analysis {
     /// Errors and warnings from parsing, type checking and elaboration.
     pub diagnostics: Vec<Diagnostic>,
@@ -173,6 +206,8 @@ pub struct Analysis {
     pub types: Option<check::TypeInfo>,
     /// The inferred domain of each unknown declaration, when elaboration got that far.
     pub domains: Vec<InferredDomain>,
+    /// Every file of the program.
+    pub sources: SourceMap,
 }
 
 /// Analyses `source` for editor tooling: parses, type-checks, and elaborates the program as a run
@@ -185,12 +220,15 @@ pub fn analyze(
     budget: std::time::Duration,
 ) -> Analysis {
     with_large_stack(|| {
-        let program = match parser::parse(source) {
+        let (sources, loaded) = load::load(source);
+        let program = match loaded {
             Ok(program) => program,
-            Err(error) => {
+            Err(diagnostics) => {
                 return Analysis {
-                    diagnostics: vec![error],
-                    ..Analysis::default()
+                    diagnostics,
+                    types: None,
+                    domains: Vec::new(),
+                    sources,
                 };
             }
         };
@@ -200,14 +238,14 @@ pub fn analyze(
                 diagnostics,
                 types: Some(types),
                 domains: Vec::new(),
+                sources,
             };
         }
         let factory = || -> Box<dyn Solver> { unreachable!("analysis never solves") };
         let mut sink = std::io::sink();
-        let mut interpreter = Interpreter::new(source, options, &types, &factory, &mut sink, None);
-        interpreter.analysis = Some(interp::AnalysisState::new(
-            std::time::Instant::now() + budget,
-        ));
+        let mut interpreter =
+            Interpreter::new(&sources, options, &types, &factory, &mut sink, None);
+        interpreter.analysis = Some(interp::AnalysisState::new(budget));
         let result = interpreter.run(&program);
         diagnostics.append(&mut interpreter.warnings);
         match result {
@@ -218,24 +256,32 @@ pub fn analyze(
         let domains = interpreter
             .analysis
             .take()
-            .map(|state| state.finish(source))
+            .map(|state| state.finish(&sources))
             .unwrap_or_default();
         drop(interpreter);
         Analysis {
             diagnostics,
             types: Some(types),
             domains,
+            sources,
         }
     })
 }
 
 type Checked = (Program, TypeInfo, Vec<Diagnostic>);
 
-fn front_end(source: &SourceFile, options: &CompilerOptions) -> Result<Checked, Vec<Diagnostic>> {
-    let program = parser::parse(source).map_err(|error| vec![error])?;
+fn front_end(
+    source: &SourceFile,
+    options: &CompilerOptions,
+) -> (SourceMap, Result<Checked, Vec<Diagnostic>>) {
+    let (sources, loaded) = load::load(source);
+    let program = match loaded {
+        Ok(program) => program,
+        Err(errors) => return (sources, Err(errors)),
+    };
     let (types, diagnostics) = check::check(&program, options);
     if diagnostics.iter().any(Diagnostic::is_error) {
-        return Err(diagnostics);
+        return (sources, Err(diagnostics));
     }
-    Ok((program, types, diagnostics))
+    (sources, Ok((program, types, diagnostics)))
 }

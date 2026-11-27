@@ -23,7 +23,7 @@ fn run_program_with(path: &Path, builtin: bool) -> (String, bool) {
         .expect("a file")
         .to_string_lossy()
         .into_owned();
-    let source = SourceFile::new(name, text);
+    let source = SourceFile::new(name, text).with_path(path);
     let layer = find_config(path.parent().expect("a directory"))
         .map(|config| load_config(&config).expect("valid redsat.toml"))
         .unwrap_or_default();
@@ -38,9 +38,7 @@ fn run_program_with(path: &Path, builtin: bool) -> (String, bool) {
     };
     let outcome = redsat_lang::run(&source, &options, &factory, &mut out);
     let mut text = String::from_utf8(out).expect("UTF-8 output");
-    for diagnostic in &outcome.diagnostics {
-        text.push_str(&diagnostic.render(&source));
-    }
+    text.push_str(&outcome.render_diagnostics());
     (text, outcome.has_errors())
 }
 
@@ -119,6 +117,7 @@ const SOLVER_DEPENDENT: &[&str] = &[
     "optimize_all_optima",
     "palindromes",
     "scheduling",
+    "standard_library",
 ];
 
 /// Programs too slow for the built-in solver to be part of the test suite (large multipliers).

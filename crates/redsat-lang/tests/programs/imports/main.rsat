@@ -1,0 +1,7 @@
+// Imports bring in functions, enums and structs from other files (imports are transitive).
+import "geometry.rsat"
+
+var p: Point = Point(0, 0)
+var q: Point
+require distance_squared(p, q) == 25 and q.x > 0 and q.y > 0
+solve all q

@@ -1,0 +1,9 @@
+error: an imported file may only declare functions, enums and structs
+ --> ../imports/bad_module.rsat:2:1
+  |
+2 | print "modules cannot run statements"
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ ::: import_with_statements.rsat:1:1
+  |
+1 | import "../imports/bad_module.rsat"
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ imported here

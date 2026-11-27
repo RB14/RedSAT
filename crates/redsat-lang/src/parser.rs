@@ -39,11 +39,21 @@ type Result<T> = std::result::Result<T, Diagnostic>;
 ///
 /// Returns a diagnostic for the first syntax error.
 pub fn parse(source: &SourceFile) -> Result<Program> {
-    let tokens = lexer::lex(source.text(), 0)?;
+    parse_from(source, 0)
+}
+
+/// Parses one file of a multi-file program; its variable declarations are numbered from
+/// `first_decl` on, so that [`DeclId`]s stay unique across files.
+///
+/// # Errors
+///
+/// Returns a diagnostic for the first syntax error.
+pub fn parse_from(source: &SourceFile, first_decl: usize) -> Result<Program> {
+    let tokens = lexer::lex(source.text(), source.base())?;
     let mut parser = Parser {
         tokens,
         pos: 0,
-        next_decl: 0,
+        next_decl: first_decl,
     };
     let stmts = parser.statements_until_eof()?;
     Ok(Program {
@@ -220,6 +230,20 @@ impl Parser {
             }
             TokenKind::Enum => StmtKind::Enum(self.enum_decl()?),
             TokenKind::Struct => StmtKind::Struct(self.struct_decl()?),
+            TokenKind::Import => {
+                self.bump();
+                match self.peek().clone() {
+                    TokenKind::Str(path) => {
+                        self.bump();
+                        StmtKind::Import(path)
+                    }
+                    _ => {
+                        return Err(
+                            self.unexpected("a file name in quotes, e.g. `import \"shapes.rsat\"`")
+                        );
+                    }
+                }
+            }
             TokenKind::Ident(_) => self.assignment_or_call()?,
             _ => return Err(self.unexpected("a statement")),
         };

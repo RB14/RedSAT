@@ -17,8 +17,7 @@ mod repl;
 use clap::{Args, Parser, Subcommand};
 use redsat_lang::config::{find_config, load_config};
 use redsat_lang::{
-    Answer, AskFn, CompilerOptions, Diagnostic, ExplicitTypes, OptionLayer, SourceFile,
-    UnboundedInts,
+    Answer, AskFn, CompilerOptions, ExplicitTypes, OptionLayer, SourceFile, UnboundedInts,
 };
 use redsat_sat::{Cadical, Cdcl, SolveResult, Solver, dimacs};
 
@@ -175,7 +174,10 @@ fn prepare(
         max_int_bits: args.max_int_bits,
     };
     let options = CompilerOptions::resolve(&file_layer, &cli_layer)?;
-    Ok((SourceFile::new(file.display().to_string(), text), options))
+    Ok((
+        SourceFile::new(file.display().to_string(), text).with_path(file),
+        options,
+    ))
 }
 
 fn repl(args: &OptionArgs, solver: &str) -> Result<ExitCode, Box<dyn Error>> {
@@ -208,10 +210,8 @@ fn cli_layer(args: &OptionArgs) -> OptionLayer {
     }
 }
 
-fn report(source: &SourceFile, diagnostics: &[Diagnostic]) {
-    for diagnostic in diagnostics {
-        eprint!("{}", diagnostic.render(source));
-    }
+fn report(outcome: &redsat_lang::RunOutcome) {
+    eprint!("{}", outcome.render_diagnostics());
 }
 
 fn run(
@@ -248,7 +248,7 @@ fn run(
     let ask: Option<&AskFn> = if interactive { Some(&ask) } else { None };
     let outcome = redsat_lang::run_with(&source, &options, &factory, &mut out, ask);
     out.flush()?;
-    report(&source, &outcome.diagnostics);
+    report(&outcome);
     if stats {
         for solve_stats in &outcome.stats {
             eprint!("{}", solve_stats.render(&source));
@@ -263,9 +263,9 @@ fn run(
 
 fn check(file: &Path, args: &OptionArgs) -> Result<ExitCode, Box<dyn Error>> {
     let (source, options) = prepare(file, args)?;
-    let diagnostics = redsat_lang::check(&source, &options);
-    report(&source, &diagnostics);
-    if diagnostics.iter().any(Diagnostic::is_error) {
+    let outcome = redsat_lang::check(&source, &options);
+    report(&outcome);
+    if outcome.has_errors() {
         Ok(ExitCode::FAILURE)
     } else {
         eprintln!("{}: ok", source.name());

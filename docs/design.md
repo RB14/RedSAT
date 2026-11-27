@@ -661,6 +661,14 @@ choice below was **measured** with the benchmark suite in `bench/` (`bench/run.s
   The gains come from *substitution* (`¬(x ∧ y) ∧ x = x ∧ ¬y`), which simplifies the partial
   products of multipliers; without it the rules were neutral. The rules are kept for the large
   wins on arithmetic. The portfolio (`--threads`) also evens out such per-instance variance.
+- **Comparisons decided by ranges** (`x >= 0` for an `x` in `0..=35`) fold to constants before
+  any circuit is built, so entailed requirements cost nothing (25% fewer clauses on the
+  scheduling example).
+- **CaDiCaL options, measured and rejected.** The profile of enumeration (10-queens, 725 calls)
+  shows 10% of the time in reconstructing eliminated variables. But turning elimination off
+  (`elim=0`) made every benchmark slower. Turning off the "lucky" phases (`lucky=0`) made
+  enumeration 30% and the roster 2× faster, yet most factoring instances and the magic square
+  2–6× slower. The defaults stay.
 
 `--stats` splits each `solve` into *build* time (domains, circuit, CNF) and *search* time (SAT
 calls, decoding). On the largest benchmark (quasigroup completion of order 20: 123k AND gates)

@@ -40,10 +40,21 @@ arrays, records.
 
 ## 3. A tour of the language
 
+Each example first states the problem in plain words, then shows how RedSAT expresses it. None of
+the programs says *how* to find the answer; each one describes what an answer looks like.
+
 ### 3.1 Factoring
 
+**The problem.** A number `n` is the product of two primes (a *semiprime*), and we want to find
+those two primes. Multiplying is easy, but going backwards from `n` to its factors is hard. The
+security of RSA encryption rests on this being infeasible for very large numbers.
+
+**The RedSAT approach.** Declare two unknowns, require that their product is `n`, and rule out
+the trivial answer `1 × n`. The compiler turns `x * y == n` into a multiplier circuit, the same
+one a CPU uses, and the SAT solver runs that circuit *backwards*: which inputs make it output
+`n`?
+
 ```rsat
-// Find the two prime factors of a semiprime.
 var n = 1000036000099          // = 1000003 × 1000033, known at compile time
 var x, y                       // unknowns: types and bit widths are inferred
 
@@ -56,11 +67,27 @@ solve x, y {
 }
 ```
 
-Nothing here mentions bits. From the constraints the compiler infers `x, y ∈ [2, n/2]`
-(39 bits each), sizes `x * y` at 78 bits so that it cannot overflow, and compares it against
-the 40-bit constant `n`.
+Nothing here mentions bits. From the constraints, the compiler infers `x, y ∈ [2, n/2]`
+(39 bits each), sizes `x * y` at 78 bits so it cannot overflow, and compares it against the
+40-bit constant `n`. If `n` is prime, the program prints `no solution`, and that is a proof of
+primality.
 
 ### 3.2 Cryptarithm: SEND + MORE = MONEY
+
+**The problem.** A classic puzzle from 1924:
+
+```text
+      S E N D
+  +   M O R E
+  -----------
+    M O N E Y
+```
+
+Each letter stands for a different digit (0–9), and the leading letters `S` and `M` are not 0.
+Which digit is each letter?
+
+**The RedSAT approach.** Use one unknown digit per letter, an `all_different` constraint, and
+write the column addition as one equation over place values (thousands, hundreds, …).
 
 ```rsat
 var s, e, n, d, m, o, r, y: int[0..=9]
@@ -74,7 +101,18 @@ require (            1000*s + 100*e + 10*n + d
 solve s, e, n, d, m, o, r, y     // no body: prints the listed variables
 ```
 
+The unique answer is 9567 + 1085 = 10652.
+
 ### 3.3 N-Queens: compile-time parameters and loops
+
+**The problem.** Place `N` queens on an `N × N` chessboard so that no two attack each other:
+no two may share a row, a column or a diagonal. The standard 8 × 8 board has 92 solutions.
+
+**The RedSAT approach.** Every row must hold exactly one queen, so each row's queen is modelled
+by a single unknown: the column it stands in. Rows are then distinct by construction, and the
+constraints keep columns and diagonals distinct. Queens in rows `r1` and `r2` share a diagonal
+exactly when their columns differ by `±(r2 − r1)`. `N` is an ordinary concrete value: set it to
+20 and the loops generate the constraints for a 20 × 20 board.
 
 ```rsat
 var N = 8                               // concrete: drives the shape of the problem
@@ -96,6 +134,14 @@ solve all queen limit 3 {
 
 ### 3.4 Knapsack: optimization
 
+**The problem.** A backpack can carry at most 15 kg. Each available item has a weight and a value.
+Which items should go in to make the total value as large as possible without exceeding the
+weight limit? The same pattern shows up in choosing projects under a budget, loading cargo, and
+allocating servers.
+
+**The RedSAT approach.** Use one yes/no unknown per item ("is it taken?"), a constraint on the
+total weight, and `maximize` on the total value.
+
 ```rsat
 var weight   = [12, 2, 1, 1,  4]
 var value    = [ 4, 2, 1, 2, 10]
@@ -108,8 +154,17 @@ solve take maximize sum(value[i] for i in 0..len(weight) if take[i])
 ```
 
 The `if take[i]` filter is *symbolic*: it compiles to `take[i] ? weight[i] : 0` inside the sum.
+The optimum takes every item except the first: 8 kg, value 15.
 
 ### 3.5 Symbolic control flow and mutation
+
+**The problem.** A small riddle: two numbers between 0 and 100 add up to 50, and the larger of
+the two is 42. What are they?
+
+**The RedSAT approach.** This example shows that ordinary imperative code works on unknowns.
+`biggest` starts as `a` and is overwritten with `b` when `b > a`. Whether `b > a` holds is not
+known at compile time, so the compiler encodes both branches, and `biggest` becomes
+"`b` if `b > a`, otherwise `a`".
 
 ```rsat
 var a, b: int[0..=100]
@@ -127,22 +182,35 @@ solve all a, b              // → (42, 8) and (8, 42)
 
 ### 3.6 Projection: auxiliary unknowns
 
+**The problem.** Which numbers from 1 to 50 can be written as a sum of two squares,
+`total = a² + b²`? For example `5 = 1² + 2²`, but 3 cannot be written that way.
+
+**The RedSAT approach.** `a` and `b` are *witnesses*: they only need to exist. Many totals have
+several witnesses (`25 = 0² + 5² = 3² + 4²`, plus every sign variation). Because only `total` is
+listed after `solve all`, each total is still reported exactly once. This is *projection*
+(§4.6).
+
 ```rsat
 var total: int[1..=50]
 var a, b                    // auxiliary witnesses
 require a * a + b * b == total
 
-solve all total             // 1, 2, 4, 5, 8, 9, 10, 13, … each exactly once,
-                            // although e.g. 25 = 0² + 5² = 3² + 4² = (−3)² + 4² = …
+solve all total             // 1, 2, 4, 5, 8, 9, 10, 13, … each exactly once
 ```
 
 ### 3.7 Strings (later phase, a teaser)
+
+**The problem.** Find five-letter lowercase palindromes: words that read the same forwards and
+backwards, like "level" or "kayak".
+
+**The RedSAT approach.** Use one string unknown with a fixed length, an alphabet restriction on
+every character, and the palindrome property itself. `limit 10` asks for the first ten answers.
 
 ```rsat
 var word: string
 require len(word) == 5
 require all(c in 'a'..='z' for c in word)
-require reverse(word) == word           // palindromes
+require reverse(word) == word
 
 solve all word limit 10
 ```
@@ -182,7 +250,8 @@ for i in 0..len(items) {
 ```
 
 Types may be omitted whenever usage determines them (`var x, y` followed by `x * y == n` makes
-both `int`). Ambiguous cases are compile errors asking for an annotation.
+both `int`). Ambiguous cases are compile errors asking for an annotation. A project that wants
+every unknown to be annotated can say so with the `explicit-types` compiler option (§6.3).
 
 ### 4.3 Control flow
 
@@ -199,21 +268,73 @@ both `int`). Ambiguous cases are compile errors asking for an annotation.
 
 ### 4.4 Types
 
-| Type                              | Meaning                                                          | Encoding                                   |
-|-----------------------------------|------------------------------------------------------------------|--------------------------------------------|
-| `bool`                            | truth value                                                      | one SAT variable                           |
-| `int`                             | mathematical integer; domain inferred (§4.5)                     | two's-complement bit-vector sized to fit   |
-| `int[lo..hi]`, `int[lo..=hi]`     | integer with an explicit domain                                  | same, sized to the domain                  |
-| `int<N>`, `uint<N>`               | explicit bit bound: `[−2^(N−1), 2^(N−1))`, `[0, 2^N)`            | N bits                                     |
-| `char`                            | Unicode scalar; a subtype of `int[0..=0x10FFFF]`                 | narrowed by inference (e.g. to 7 bits)     |
-| `string`                          | bounded sequence of `char` plus a symbolic length                | array of chars + length                    |
-| `[T; N]`                          | fixed-size array (`N` concrete)                                  | N encoded elements                         |
-| `enum E { A, B, C }`              | finite enumeration                                               | small integer or one-hot                   |
-| `struct S { … }`                  | record                                                           | its fields                                 |
+| Type                          | Values                                                         | Encoding                                  |
+|-------------------------------|----------------------------------------------------------------|-------------------------------------------|
+| `bool`                        | `true`, `false`                                                | one SAT variable                          |
+| `int`                         | any integer; the domain is inferred (§4.5)                     | two's-complement bit-vector sized to fit  |
+| `int[lo..hi]`                 | integers from `lo` up to, but **excluding**, `hi`              | sized to the domain                       |
+| `int[lo..=hi]`                | integers from `lo` up to and **including** `hi`                | sized to the domain                       |
+| `uint<N>`                     | what an unsigned `N`-bit number holds: `0 … 2^N − 1`           | `N` bits                                  |
+| `int<N>`                      | what a signed `N`-bit number holds: `−2^(N−1) … 2^(N−1) − 1`   | `N` bits                                  |
+| `char`                        | a Unicode character, e.g. `'a'`                                | narrowed by inference (e.g. to 7 bits)    |
+| `string`                      | a sequence of characters with a bounded length                 | array of chars + a length                 |
+| `[T; N]`                      | exactly `N` values of type `T` (`N` concrete)                  | `N` encoded elements                      |
+| `enum E { A, B, … }`          | one of the listed names                                        | small integer or one-hot                  |
+| `struct S { f: T, … }`        | a record of named fields                                       | its fields                                |
 
-Explicit bounds (`int[…]`, `int<N>`, `uint<N>`) **always take precedence** over inference:
-inference may narrow inside them but never widen them. If the constraints need values outside
-an explicit bound, the program correctly has no solution.
+Concrete examples:
+
+```rsat
+var flag: bool                  // true or false
+var count: int                  // any integer; the compiler works out how many bits it needs
+var digit: int[0..=9]           // 0, 1, 2, …, 9
+var die: int[1..=6]             // 1, 2, …, 6
+var index: int[0..8]            // 0, 1, …, 7: exactly the valid indices of an 8-element array
+var celsius: int[-40..=50]      // negative bounds are fine
+var level: int[0..N]            // bounds may be any compile-time expression
+var byte: uint<8>               // 0 … 255
+var sample: int<16>             // −32768 … 32767
+var letter: char                // e.g. 'q'                                     (later phase)
+var name: string                // e.g. "kayak"                                 (later phase)
+var row: [int[1..=9]; 9]        // nine digits, each from 1 to 9                (later phase)
+var board: [[bool; 8]; 8]       // an 8 × 8 grid of yes/no cells                (later phase)
+
+enum Color { Red, Green, Blue }                                              // (later phase)
+var paint: Color
+
+struct Point { x: int, y: int }                                              // (later phase)
+var corner: Point
+```
+
+**Ranges: `..` versus `..=`.** Both describe a run of consecutive integers and differ only in
+whether the upper end is included:
+
+| Range     | Includes `hi`? | Example       | Values           |
+|-----------|----------------|---------------|------------------|
+| `lo..hi`  | no (half-open) | `int[0..10]`  | 0, 1, …, 9       |
+| `lo..=hi` | yes (closed)   | `int[0..=9]`  | 0, 1, …, 9       |
+
+So `int[0..10]` and `int[0..=9]` are the same type. Each form reads naturally in a different
+situation:
+- **`..` fits counting and indexing.** `for i in 0..N` runs exactly `N` times, and `int[0..N]` is
+  exactly the set of valid indices of an array of length `N`.
+- **`..=` fits natural bounds.** "A digit from 0 to 9" is `int[0..=9]`, and "a die roll" is
+  `int[1..=6]`.
+
+This is the same convention as Rust (Swift spells it `..<` and `...`). A range with no values,
+such as `int[5..5]`, is a compile error.
+
+**Bounds restrict variables, not arithmetic.** A bounded type limits which values a *variable*
+may hold. Computing with it is still exact: with `a, b: uint<8>`, the expression `a + b` may be
+510. Storing a value into a bounded variable (`var total: uint<8> = a + b`) adds the constraint
+that the value fits (`total ≤ 255`).
+
+**Explicit bounds always take precedence** over inference. Inference may narrow a domain inside
+the declared bounds but never widens it. If the constraints need values outside the declared
+bounds, the program correctly has no solution.
+
+**Annotations are optional by default.** `var x, y` followed by `x * y == n` makes both `int`.
+The `explicit-types` compiler option (§6.3) can require them.
 
 Operators (strawman): arithmetic `+ - * / % ^`(power with concrete exponent); comparison
 `== != < <= > >=`; logic `and or not xor implies iff`; bitwise on non-negative integers
@@ -283,7 +404,7 @@ solve [all | unique] <vars> [limit K] [minimize <expr> | maximize <expr>] [{ bod
   - `unique`: one solution plus a proof that no other exists (a second SAT call);
   - `minimize` / `maximize`: an optimal solution, found with incremental SAT by tightening the
     bound on the objective until the problem becomes UNSAT.
-- **Interactive iteration.** `redsat run prog.rsat --interactive` pauses after each solution:
+- **Interactive iteration.** `redsat prog.rsat --interactive` pauses after each solution:
   `[n]ext · [a]ll · [q]uit`.
 - **Don't-cares.** If a listed variable is not constrained at all, the solver picks an
   arbitrary value; RedSAT flags it as *unconstrained* in the default output.
@@ -406,31 +527,82 @@ the model, and query failed assumptions.
 
 ### 6.1 Command line
 
+Running a program is the default action, so there is no `run` subcommand:
+
 ```text
-redsat run prog.rsat [--interactive] [--solver cadical] [--max-int-bits 256]
-redsat emit prog.rsat --stage ast|ir|aig|cnf|stats
-redsat dimacs problem.cnf          # solve a raw DIMACS file (available since Phase 0 ✅)
+redsat prog.rsat [options]           # compile and run the program
+redsat check prog.rsat [options]     # parse and type-check only: quick feedback for editors and CI
+redsat dimacs problem.cnf            # solve a raw DIMACS file (exit code 10 = SAT, 20 = UNSAT)
+
+options:
+  --strict                           # enable every strict check (§6.3)
+  --explicit-types <off|unknowns|all>
+  --unbounded-ints <deepen|error>
+  --max-int-bits <N>
+  --config <redsat.toml>             # instead of searching for one
+  --stats                            # per solve: domains, bit widths, circuit and CNF sizes, time
 ```
+
+Later: `--interactive` (step through solutions) and `--emit ast|ir|aig|cnf`.
 
 ### 6.2 VS Code support
 
-Programs should be pleasant to read in an editor. This is delivered in two steps:
+Programs should be pleasant to read and write in an editor. The extension lives in
+`editors/vscode/` and grows in two steps:
 
-1. **Syntax highlighting (Phase 1, shipped with the lexer).** A declarative VS Code extension
-   in `editors/vscode/` containing:
-   - a TextMate grammar (`syntaxes/rsat.tmLanguage.json`) covering keywords, types, numeric
-     and string literals with `{…}` interpolation, comments, operators, and range literals;
-   - `language-configuration.json` with comment toggling (`//`, `/* */`), bracket matching,
-     auto-closing pairs and indentation rules;
-   - the `.rsat` file association.
+1. **Highlighting, snippets and Markdown (Phase 1).** A declarative extension that provides:
+   - a TextMate grammar (`syntaxes/rsat.tmLanguage.json`) covering keywords, types, numeric and
+     string literals with `{…}` interpolation, comments, operators and ranges;
+   - **Markdown support**: fenced code blocks tagged ```` ```rsat ```` (or ```` ```redsat ````) are
+     highlighted in any Markdown file, including this document, through a grammar injected into
+     VS Code's Markdown grammar;
+   - snippets with tab stops for the common shapes (`var`, `require`, `solve`, `solve all`,
+     `for`, `if`, `fn`, …), a first taste of autocomplete;
+   - `language-configuration.json` with comment toggling, bracket matching, auto-closing pairs
+     and indentation rules.
 
-   It installs from a locally built `.vsix`. Because it is purely declarative it works both in
-   local Windows windows and in WSL remote windows. A unit test in `redsat-lang` checks that the
-   grammar's keyword list matches the lexer's keyword table, so the two cannot drift.
-2. **Language server (later).** `redsat lsp` will provide live diagnostics (including UNSAT
-   explanations), go-to-definition, and RedSAT-specific views. Examples are hovers and inlay
-   hints showing each variable's **inferred domain and bit width**
-   (`x: int[2..=500018000049] · 39 bits`), and a code lens with the CNF size of each `solve`.
+   It installs from a locally built `.vsix`. Being purely declarative, it works in local Windows
+   windows and in WSL remote windows alike. A unit test in `redsat-lang` checks that the
+   grammar's keyword lists match the lexer's keyword table, so the two cannot drift.
+2. **Language server (Phase 2).** `redsat lsp` speaks the Language Server Protocol and powers
+   the real editor intelligence:
+   - live diagnostics while typing (parse, type and strict-mode errors);
+   - **autocomplete** for keywords, variables and functions in scope, types after `:`, and
+     solve modifiers;
+   - hovers and inlay hints showing each variable's **inferred domain and bit width**
+     (`x: int[2..=500018000049] · 39 bits`);
+   - go-to-definition, and a code lens with the CNF size of each `solve`.
+
+### 6.3 Compiler options: `redsat.toml`
+
+Like `tsconfig.json` in TypeScript, an optional `redsat.toml` configures the compiler for every
+program in its directory and below. The compiler looks in the program's directory, then its
+parent directories, and uses the first file it finds (or the one given with `--config`).
+
+```toml
+[compiler]
+strict = true                # turn on the whole strict family below
+explicit-types = "unknowns"  # "off" | "unknowns" | "all"     (default "off"; strict: "unknowns")
+unbounded-ints = "error"     # "deepen" | "error"             (default "deepen"; strict: "error")
+fallback-int-bits = 32       # first magnitude tried for unbounded integers (§4.5)
+max-int-bits = 256           # stop deepening beyond this
+```
+
+Precedence, lowest to highest: built-in defaults, then what `strict` implies, then keys set
+explicitly in `redsat.toml`, then command-line flags. This means a strict project can still opt
+out of one check by setting its key explicitly.
+
+| Option              | What it enforces                                                                 |
+|---------------------|----------------------------------------------------------------------------------|
+| `explicit-types`    | `"unknowns"`: every unknown (`var` without an initializer) needs a type, like TypeScript's `noImplicitAny`. `"all"`: every `var` needs one, even `var n: int = 42`. |
+| `unbounded-ints`    | `"error"`: an integer unknown whose domain cannot be inferred is a compile error, instead of being solved with iterative deepening (§4.5). |
+
+```rsat
+// with explicit-types = "unknowns"
+var x                   // error: `x` needs a type annotation, e.g. `var x: int`
+var y: int              // ok
+var n = 42              // ok: the initializer determines the type
+```
 
 ## 7. Testing strategy
 
@@ -452,12 +624,13 @@ Programs should be pleasant to read in an editor. This is delivered in two steps
 | Phase | Scope                                                                                         | Milestone                       |
 |-------|-----------------------------------------------------------------------------------------------|---------------------------------|
 | 0 ✅  | AIG, Tseitin/PG encoder, DIMACS I/O, `Solver` trait + CaDiCaL, exact unsigned gadgets          | factoring via hand-built circuit |
-| 1     | lexer, parser, `var`/`require`/`solve`/`print`, bool + int with inferred widths, signed gadgets, VS Code grammar | factoring in `.rsat`  |
-| 2     | arrays, compile-time `for`/`if`, functions, comprehensions, stdlib (`all_different`, `sum`, `count`), cardinality encodings | N-Queens, cryptarithms, graph colouring |
-| 3     | symbolic `if`/assignment merging, `/` `%`, bitwise ops, chars, strings, enums, structs          | string puzzles, scheduling      |
-| 4     | `solve all/unique/limit/minimize/maximize`, interactive mode, UNSAT explanations, multiple `solve`s | knapsack, puzzle generation |
-| 5     | optimiser: encoding selection, symmetry breaking, CSE; benchmark suite                           | performance                     |
-| 6     | language server, REPL, built-in CDCL solver                                                     | stretch                         |
+| 1     | lexer, parser, type inference, `var`/`require`/`solve`/`print`, bool + int with inferred widths, signed gadgets, compile-time `for`/`if`, `solve all/unique/limit`, `redsat.toml` + strict mode, VS Code grammar + Markdown fences + snippets | factoring, triples, logic puzzles in `.rsat` |
+| 2     | language server: live diagnostics, autocomplete, hovers with inferred domains and widths       | editor intelligence             |
+| 3     | arrays, functions, comprehensions, stdlib (`all_different`, `sum`, `count`), cardinality encodings | N-Queens, cryptarithms, graph colouring |
+| 4     | symbolic `if`/assignment merging, `/` `%`, bitwise ops, chars, strings, enums, structs          | string puzzles, scheduling      |
+| 5     | `minimize`/`maximize`, interactive mode, UNSAT explanations, incremental multiple `solve`s      | knapsack, puzzle generation     |
+| 6     | optimiser: encoding selection, symmetry breaking, CSE; benchmark suite                           | performance                     |
+| 7     | REPL, built-in CDCL solver                                                                      | stretch                         |
 
 ## 9. Open questions
 

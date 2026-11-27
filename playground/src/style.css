@@ -937,6 +937,12 @@ kbd {
   font-weight: 600;
 }
 
+/* An example no solver finishes. */
+.card .tag.hard {
+  background: var(--accent-fill);
+  color: white;
+}
+
 .card-delete {
   position: absolute;
   top: 8px;

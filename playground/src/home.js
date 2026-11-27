@@ -122,7 +122,13 @@ export function renderHome(root, state, actions) {
             h(
               'button',
               { class: 'card-main', onclick: () => actions.openExample(example.name) },
-              h('span', { class: 'card-title' }, example.title, example.slow ? h('span', { class: 'tag', title: example.slow }, 'slow') : null),
+              h(
+                'span',
+                { class: 'card-title' },
+                example.title,
+                example.slow ? h('span', { class: 'tag', title: example.slow }, 'slow') : null,
+                example.hard ? h('span', { class: 'tag hard', title: example.hard }, 'too hard') : null,
+              ),
               h('span', { class: 'card-text' }, example.description),
             ),
           ),

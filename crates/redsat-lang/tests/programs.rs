@@ -120,7 +120,10 @@ fn golden_programs() {
     let mut examples = Vec::new();
     programs_in(&crate_dir.join("../../examples"), &mut examples);
     for example in &examples {
-        let actual = run_program(example);
+        let actual = match hint_for(example) {
+            Some(hint) => run_hinted(example, hint),
+            None => run_program(example),
+        };
         let text = fs::read_to_string(example).expect("readable example");
         if bless {
             fs::write(example, with_documented_output(&text, &actual)).expect("writable example");
@@ -171,7 +174,37 @@ const SOLVER_DEPENDENT: &[&str] = &[
 ];
 
 /// Programs too slow for the built-in solver to be part of the test suite (large multipliers).
-const TOO_SLOW_FOR_BUILTIN: &[&str] = &["factor", "pell"];
+const TOO_SLOW_FOR_BUILTIN: &[&str] = &["factor", "pell", "factor100"];
+
+/// Examples that no solver finishes (genuinely hard problems), with a requirement that gives the
+/// answer away. Tested with the hint added before their `solve`: their `// Output:` block shows
+/// the answer, so this checks that the encoding accepts it.
+const HINTS: &[(&str, &str)] = &[(
+    "factor100",
+    "require x == 32560992426697430739231873273019988725361522757257",
+)];
+
+fn hint_for(path: &Path) -> Option<&'static str> {
+    let name = path.file_stem()?.to_string_lossy();
+    HINTS
+        .iter()
+        .find(|(example, _)| *example == name)
+        .map(|(_, hint)| *hint)
+}
+
+/// Runs `path` with `hint` added on the line before its last `solve`.
+fn run_hinted(path: &Path, hint: &str) -> String {
+    let text = fs::read_to_string(path).expect("readable program");
+    let at = text.rfind("\nsolve ").expect("a solve statement") + 1;
+    let hinted = format!("{}{hint}\n{}", &text[..at], &text[at..]);
+    let directory = std::env::temp_dir().join(format!("redsat-hint-{}", std::process::id()));
+    fs::create_dir_all(&directory).expect("a temporary directory");
+    let copy = directory.join(path.file_name().expect("a file"));
+    fs::write(&copy, hinted).expect("writable copy");
+    let output = run_program(&copy);
+    fs::remove_dir_all(&directory).ok();
+    output.replace(&copy.display().to_string(), &path.display().to_string())
+}
 
 /// Every program also runs on the built-in CDCL solver. Each decoded model is checked against
 /// the program's constraints, so a wrong answer would surface as an internal error. Outputs must

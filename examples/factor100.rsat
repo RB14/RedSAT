@@ -1,0 +1,62 @@
+// Factoring a 100-digit number: a genuinely hard problem, beyond the reach of SAT solvers.
+//
+// `n` is the product of two random 50-digit primes, the way RSA keys are made. Every fact we
+// know about its factors is written down as a requirement, and the compiler turns them all into
+// one SAT problem whose heart is a 166 × 168-bit multiplier circuit run backwards: about 290,000
+// gates and 825,000 clauses over 334 bits of unknowns.
+//
+// This problem cannot be solved by SAT in any reasonable time. No SAT solver is known to factor
+// numbers this large, and that hardness is what RSA's security rests on (dedicated algorithms,
+// such as the number field sieve, have reached 250 digits). Run it with Verbose on to see how it
+// compiles, then press Stop (Ctrl+C in a terminal).
+
+var n = 3038196057505930010811710076216320581288302278916974776247936251001157989818867007989370067644240363
+
+/// The largest `r` with `r * r <= n`, for a known `n` (Newton's method).
+fn isqrt(n: int) -> int {
+    var r = n
+    var next = (r + 1) / 2
+    while next < r {
+        r = next
+        next = (r + n / r) / 2
+    }
+    return r
+}
+
+var root = isqrt(n)
+var x, y
+
+// 1. n has two factors.
+require x * y == n
+
+// 2. Both are odd, as n is.
+require is_odd(x) and is_odd(y)
+
+// 3. The smaller one is at most √n and the larger one above it (n is not a square). With x > 1,
+//    this rules out the trivial 1 × n. It also halves x: 166 bits instead of 326.
+require x > 1 and x <= root and y > root
+
+// 4. Each pair once: x ≤ y (already implied by 3; it costs next to nothing).
+require x <= y
+
+// 5. Residues: for every small modulus m, (x mod m)·(y mod m) ≡ n (mod m). Mod 9 this is the
+//    old "casting out nines" check; mod a prime that does not divide n, it also says that
+//    neither factor is a multiple of that prime. These follow from 1, so they only restate it
+//    in small pieces the solver can learn from, for about 70,000 more gates.
+for m in [3, 5, 7, 9, 10, 11, 13, 17, 19, 23] {
+    require x % m * (y % m) % m == n % m
+}
+
+// 6. Not a theorem, but what we know about how n was made: both factors have 50 digits.
+//    Without it, the most the compiler can infer is y ≤ n / 3: y would need 326 bits instead
+//    of 168, and the multiplier twice the gates.
+require x >= 10 ^ 49
+
+solve x, y {
+    print "{n} = {x} × {y}"
+} else {
+    print "{n} is prime"
+}
+
+// Output:
+// 3038196057505930010811710076216320581288302278916974776247936251001157989818867007989370067644240363 = 32560992426697430739231873273019988725361522757257 × 93307845709728744709552925674109974595521964744659

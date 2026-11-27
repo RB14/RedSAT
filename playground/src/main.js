@@ -33,7 +33,7 @@ let running = false;
 // --- documents ------------------------------------------------------------------------------
 
 function exampleDoc(example) {
-  return { kind: 'example', id: example.name, title: example.title, description: example.description, slow: example.slow, fileName: example.file };
+  return { kind: 'example', id: example.name, title: example.title, description: example.description, slow: example.slow, hard: example.hard, fileName: example.file };
 }
 
 function fileDoc(file) {
@@ -94,13 +94,15 @@ function renderDocumentActions() {
   $('delete-file').hidden = doc.kind !== 'file';
 }
 
+/** The note above the editor: an example no solver finishes, or one that is slow with the
+ * chosen solver (with a button to switch to CaDiCaL). */
 function renderSlowNote() {
   const note = $('slow-note');
-  const show = Boolean(doc?.slow) && ['builtin', 'minisat'].includes(store.settings.solver);
-  note.hidden = !show;
-  if (!show) return;
-  $('slow-text').textContent = `⏳ ${doc.slow}`;
-  $('use-cadical').hidden = !SOLVERS.some((solver) => solver.id === 'cadical');
+  const slow = Boolean(doc?.slow) && ['builtin', 'minisat'].includes(store.settings.solver);
+  note.hidden = !doc?.hard && !slow;
+  if (note.hidden) return;
+  $('slow-text').textContent = doc.hard ? `🧱 ${doc.hard}` : `⏳ ${doc.slow}`;
+  $('use-cadical').hidden = Boolean(doc.hard) || !SOLVERS.some((solver) => solver.id === 'cadical');
 }
 
 function newFile() {

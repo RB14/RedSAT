@@ -135,6 +135,7 @@ Each example explains its problem in plain words at the top and shows its output
 | [`pythagorean.rsat`](examples/pythagorean.rsat) | `solve all`, updating variables in a solve body |
 | [`sums_of_two_squares.rsat`](examples/sums_of_two_squares.rsat) | projection: auxiliary unknowns that only need to exist |
 | [`factor.rsat`](examples/factor.rsat) | running a multiplier backwards; `else` when there is no solution |
+| [`factor100.rsat`](examples/factor100.rsat) | a genuinely hard instance (a 100-digit RSA-style number): run it with `-v` to see the encoding, not to wait for an answer |
 | [`pell.rsat`](examples/pell.rsat) | unbounded integers and iterative deepening |
 | [`palindromes.rsat`](examples/palindromes.rsat) | strings of unknown characters |
 | [`bits.rsat`](examples/bits.rsat) | bitwise operators, the standard library's `bit` and `popcount` |

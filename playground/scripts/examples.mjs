@@ -27,6 +27,7 @@ export const CURATED = [
   ['pythagorean', 'Pythagorean triples', 'Numbers'],
   ['sums_of_two_squares', 'Sums of two squares', 'Numbers'],
   ['factor', 'Factoring', 'Numbers'],
+  ['factor100', 'Factoring 100 digits', 'Numbers'],
   ['pell', "Pell's equation", 'Numbers'],
   ['palindromes', 'Palindromes', 'Strings & bits'],
   ['bits', 'Bit tricks', 'Strings & bits'],
@@ -36,6 +37,13 @@ export const CURATED = [
 export const SLOW = {
   factor: 'About 15 s with the built-in solver. Pick CaDiCaL as the solver for an instant answer.',
   pell: 'Very slow with the built-in solver. Pick CaDiCaL as the solver: it answers in milliseconds.',
+};
+
+/** Examples that no solver finishes in reasonable time, with what to tell the user (shown
+ * whatever the solver). */
+export const HARD = {
+  factor100:
+    'A genuinely hard problem: no SAT solver factors a 100-digit number in any reasonable time. Turn on Verbose to see how it compiles, then press Stop.',
 };
 
 /** The first paragraph of the comment block at the top of a program. */
@@ -72,6 +80,7 @@ export function loadExamples(directory) {
         category: categories.get(name) ?? CATEGORIES.at(-1),
         description: description(source),
         slow: SLOW[name] ?? null,
+        hard: HARD[name] ?? null,
         source,
       };
     })

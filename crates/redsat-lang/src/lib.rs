@@ -76,6 +76,23 @@ pub struct Hooks<'h> {
     /// run ends with the error [`STOPPED`]. (A SAT call in progress stops only if its solver
     /// polls the same condition, see `Solver::set_terminator`.)
     pub cancel: Option<&'h CancelFn>,
+    /// Lets `solve all` enumerate on several threads (see [`Parallel`]).
+    pub parallel: Option<&'h Parallel>,
+}
+
+/// How `solve all` may enumerate solutions on several threads (cube-and-conquer). Each worker
+/// gets its own solver and takes "cubes" (fixed values of a few bits of the solve targets) one
+/// after another, enumerating the solutions in each. Solutions are reported cube by cube, each
+/// cube's in order of the targets' values, which keeps the output the same from run to run.
+///
+/// It applies to `solve all` without a `limit` or an objective, when not interactive or
+/// cancellable.
+pub struct Parallel {
+    /// How many workers enumerate at once (2 or more to enumerate in parallel).
+    pub workers: usize,
+    /// Makes a solver for one worker. It should be single-threaded: the workers are the
+    /// parallelism.
+    pub solver: Box<SolverFactory>,
 }
 
 /// The result of checking or running a program.

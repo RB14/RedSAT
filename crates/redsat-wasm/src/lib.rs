@@ -149,6 +149,8 @@ pub fn run(
         ask: None,
         trace: verbose.then_some(&trace as &redsat_lang::TraceFn),
         cancel: stoppable.then_some(&stop_requested as &redsat_lang::CancelFn),
+        // The compiler runs in one Web Worker; parallel races happen across workers instead.
+        parallel: None,
     };
     let mut out = LineWriter::default();
     let outcome = redsat_lang::run_with(&file, &options, &factory, &mut out, hooks);

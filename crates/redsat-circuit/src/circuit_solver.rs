@@ -40,6 +40,11 @@ impl<S: Solver> CircuitSolver<S> {
         &mut self.aig
     }
 
+    /// The underlying solver, mutably (e.g. to get an interrupter).
+    pub fn solver_mut(&mut self) -> &mut S {
+        &mut self.solver
+    }
+
     /// The underlying solver, e.g. for statistics.
     pub fn solver(&self) -> &S {
         &self.solver

@@ -149,6 +149,7 @@ pub(crate) struct Interpreter<'a> {
     ask: Option<&'a AskFn>,
     trace: Option<&'a crate::TraceFn>,
     cancel: Option<&'a crate::CancelFn>,
+    parallel: Option<&'a crate::Parallel>,
     store: TermStore,
     constraints: Vec<Constraint>,
     scopes: Vec<Scope>,
@@ -186,6 +187,7 @@ impl<'a> Interpreter<'a> {
             ask: hooks.ask,
             trace: hooks.trace,
             cancel: hooks.cancel,
+            parallel: hooks.parallel,
             store: TermStore::default(),
             constraints: Vec::new(),
             scopes: vec![Scope::default()],
@@ -765,6 +767,7 @@ impl<'a> Interpreter<'a> {
             trace: self.trace,
             sources: self.sources,
             cancel: self.cancel,
+            parallel: self.parallel,
         };
         if let Some(trace) = self.trace {
             let file = self.sources.file_at(span.start);

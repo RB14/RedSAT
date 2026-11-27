@@ -48,8 +48,8 @@ pub enum Sort {
     Int,
 }
 
-/// A concrete value of a term.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+/// A concrete value of a term. (The order, booleans before integers, sorts solutions.)
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Constant {
     /// A truth value.
     Bool(bool),

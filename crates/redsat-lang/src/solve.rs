@@ -50,6 +50,8 @@ pub(crate) struct SolveRequest<'a> {
     pub sources: &'a SourceMap,
     /// Asked whether to stop.
     pub cancel: Option<&'a crate::CancelFn>,
+    /// Lets `solve all` enumerate on several threads.
+    pub parallel: Option<&'a crate::Parallel>,
 }
 
 /// How a `solve` ended.
@@ -528,10 +530,35 @@ pub(crate) fn solve(
         if request.trace.is_some() {
             trace_costs(&trace, request.sources, &attempt.costs);
         }
-        trace(format!("  search     with {}…", attempt.cs.solver().name()));
+        let parallel = parallel_enumeration(request, &attempt);
+        match parallel {
+            Some((parallel, cubes)) => trace(format!(
+                "  search     on {} threads, enumerating {cubes} cubes of the solve targets in parallel…",
+                parallel.workers
+            )),
+            None => trace(format!("  search     with {}…", attempt.cs.solver().name())),
+        }
         let searching = Instant::now();
         let calls_before = stats.sat_calls;
-        let outcome = attempt.run(request, &objective_range, on_solution);
+        let outcome = match parallel {
+            Some((parallel, cubes)) => {
+                let context = Workers {
+                    store,
+                    request,
+                    required: &required,
+                    roots: &roots,
+                    domains: &domains,
+                    parallel,
+                    cubes,
+                };
+                enumerate_in_parallel(&context, on_solution).map(|(outcome, calls, solutions)| {
+                    attempt.sat_calls += calls;
+                    attempt.solutions += solutions;
+                    outcome
+                })
+            }
+            None => attempt.run(request, &objective_range, on_solution),
+        };
         stats.search += searching.elapsed();
         attempt.record(&mut stats);
         // A solver stopped on request gives up; say why.
@@ -736,6 +763,210 @@ pub(crate) struct Cost {
     pub inputs: usize,
     pub gates: usize,
     pub clauses: usize,
+}
+
+/// How many cubes each worker should get, on average, so that the work stays balanced.
+const CUBES_PER_WORKER: usize = 8;
+
+/// The parallel enumeration settings and the number of cubes, when `request` asks for
+/// `solve all` and may enumerate in parallel: no objective (enumeration follows the
+/// optimization), no `limit` (reporting a cube means finishing it, proving it has no more
+/// solutions, which a limited search avoids: that proof can be far harder than the solutions,
+/// as with Pell's equation), not interactive and not cancellable (both are about one solver),
+/// at least two workers, and solve targets with bits to split on.
+fn parallel_enumeration<'a>(
+    request: &SolveRequest<'a>,
+    attempt: &Attempt<'_>,
+) -> Option<(&'a crate::Parallel, usize)> {
+    let parallel = request.parallel?;
+    let eligible = parallel.workers >= 2
+        && request.mode == SolveMode::All
+        && request.limit.is_none()
+        && request.objective.is_none()
+        && request.ask.is_none()
+        && request.cancel.is_none();
+    if !eligible {
+        return None;
+    }
+    let free = cube_edges(attempt, &request.projection).len();
+    let wanted = (parallel.workers * CUBES_PER_WORKER)
+        .next_power_of_two()
+        .trailing_zeros();
+    let bits = free.min(usize::try_from(wanted).unwrap_or(0));
+    (bits > 0).then_some((parallel, 1 << bits))
+}
+
+/// The bits of the solve targets that cubes fix, in order (the constant ones excluded).
+fn cube_edges(attempt: &Attempt<'_>, projection: &[TermId]) -> Vec<Edge> {
+    projection
+        .iter()
+        .flat_map(|&term| attempt.blasted.of(term).edges())
+        .filter(|edge| edge.as_constant().is_none())
+        .collect()
+}
+
+/// What the workers of a parallel enumeration share.
+struct Workers<'a, 'r> {
+    store: &'a TermStore,
+    request: &'a SolveRequest<'r>,
+    required: &'a [TermId],
+    roots: &'a [TermId],
+    domains: &'a [Interval],
+    parallel: &'a crate::Parallel,
+    /// A power of two: cube `c` fixes the first `log2(cubes)` target bits to the bits of `c`.
+    cubes: usize,
+}
+
+/// What a worker tells the thread that reports solutions.
+enum Found {
+    Solution(usize, Vec<Constant>),
+    CubeDone(usize),
+    Failed(Diagnostic),
+    Finished { sat_calls: u32 },
+}
+
+/// `solve all` by cube-and-conquer. Each worker builds its own circuit and solver, then takes
+/// cubes from a shared counter and enumerates each cube's solutions under assumptions (so one
+/// solver serves all its cubes; blocking clauses only ever exclude solutions it reported).
+/// Solutions are reported cube by cube, in cube order, each cube's in order of the targets'
+/// values: which worker takes a cube, and so the order its solver finds them in, varies from
+/// run to run, but the output does not. Returns the outcome, the SAT calls made and the
+/// solutions reported.
+fn enumerate_in_parallel(
+    context: &Workers<'_, '_>,
+    on_solution: &mut Callback<'_>,
+) -> Result<(SolveOutcome, u32, u64), Diagnostic> {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::{Mutex, mpsc};
+
+    let request = context.request;
+    let bits = context.cubes.trailing_zeros() as usize;
+    let stop = AtomicBool::new(false);
+    let next_cube = AtomicUsize::new(0);
+    // One slot per worker, holding its solver's interrupter while the solver exists: a worker
+    // empties its slot (under the lock) before dropping its solver, so stopping never calls an
+    // interrupter of a dropped solver.
+    let interrupters: Mutex<Vec<Option<redsat_sat::Interrupter>>> =
+        Mutex::new((0..context.parallel.workers).map(|_| None).collect());
+    let (sender, receiver) = mpsc::channel::<Found>();
+
+    std::thread::scope(|scope| {
+        for worker in 0..context.parallel.workers {
+            let sender = sender.clone();
+            let (stop, next_cube, interrupters) = (&stop, &next_cube, &interrupters);
+            scope.spawn(move || {
+                let mut attempt = Attempt::build(
+                    context.store,
+                    request.constraints,
+                    context.required,
+                    context.roots,
+                    context.domains,
+                    &*context.parallel.solver,
+                );
+                interrupters.lock().expect("not poisoned")[worker] =
+                    attempt.cs.solver_mut().interrupter();
+                let edges = cube_edges(&attempt, &request.projection);
+                'cubes: while !stop.load(Ordering::Relaxed) {
+                    let cube = next_cube.fetch_add(1, Ordering::Relaxed);
+                    if cube >= context.cubes {
+                        break;
+                    }
+                    let assumptions: Vec<Edge> = (0..bits)
+                        .map(|bit| edges[bit].negate_if(cube >> bit & 1 == 0))
+                        .collect();
+                    while !stop.load(Ordering::Relaxed) {
+                        match attempt.next_model(&assumptions) {
+                            Ok(Some(model)) => {
+                                attempt.block(&request.projection);
+                                if sender.send(Found::Solution(cube, model)).is_err() {
+                                    break 'cubes;
+                                }
+                            }
+                            Ok(None) => break,
+                            Err(error) => {
+                                if !stop.load(Ordering::Relaxed) {
+                                    let _ = sender.send(Found::Failed(error));
+                                }
+                                break 'cubes;
+                            }
+                        }
+                    }
+                    if !stop.load(Ordering::Relaxed) {
+                        let _ = sender.send(Found::CubeDone(cube));
+                    }
+                }
+                interrupters.lock().expect("not poisoned")[worker] = None;
+                let _ = sender.send(Found::Finished {
+                    sat_calls: attempt.sat_calls,
+                });
+                drop(attempt);
+            });
+        }
+        drop(sender);
+
+        // Report in cube order. `pending[c]` holds cube c's solutions not reported yet.
+        let mut pending: Vec<std::collections::VecDeque<Vec<Constant>>> =
+            vec![std::collections::VecDeque::new(); context.cubes];
+        let mut done = vec![false; context.cubes];
+        let (mut current, mut reported, mut sat_calls) = (0, 0u64, 0u32);
+        let mut failure = None;
+        let halt = |stop: &AtomicBool| {
+            stop.store(true, Ordering::Relaxed);
+            for interrupt in interrupters.lock().expect("not poisoned").iter().flatten() {
+                interrupt();
+            }
+        };
+        for found in &receiver {
+            match found {
+                Found::Solution(cube, model) => pending[cube].push_back(model),
+                Found::CubeDone(cube) => done[cube] = true,
+                Found::Failed(error) => {
+                    failure.get_or_insert(error);
+                    halt(&stop);
+                }
+                Found::Finished { sat_calls: calls } => sat_calls += calls,
+            }
+            while failure.is_none() && current < context.cubes && done[current] {
+                let mut solutions: Vec<Vec<Constant>> = pending[current].drain(..).collect();
+                solutions.sort_by_cached_key(|model| {
+                    request
+                        .projection
+                        .iter()
+                        .map(|term| model[term.index()].clone())
+                        .collect::<Vec<_>>()
+                });
+                for model in solutions {
+                    if request.limit.is_some_and(|limit| reported >= limit) {
+                        break;
+                    }
+                    reported += 1;
+                    if let Err(error) = on_solution(&model) {
+                        failure = Some(error);
+                        halt(&stop);
+                        break;
+                    }
+                }
+                current += 1;
+            }
+            let finished =
+                current == context.cubes || request.limit.is_some_and(|limit| reported >= limit);
+            if finished && !stop.load(Ordering::Relaxed) {
+                halt(&stop);
+            }
+        }
+        if let Some(error) = failure {
+            return Err(error);
+        }
+        let outcome = if reported == 0 {
+            SolveOutcome::NoSolution {
+                searched: None,
+                conflict: None,
+            }
+        } else {
+            SolveOutcome::Solved
+        };
+        Ok((outcome, sat_calls, reported))
+    })
 }
 
 /// Marks the not yet `claimed` nodes of the cones of `edges` as claimed and counts them:

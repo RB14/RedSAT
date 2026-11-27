@@ -774,6 +774,26 @@ On heavy-tailed instances, one of the members is usually lucky; on easy calls th
 message to the watchdog. With several threads, which of several valid solutions is found can
 vary from run to run (`-j 1` is reproducible).
 
+**Parallel enumeration: cube-and-conquer.** Racing does not speed up `solve all`, whose many
+calls are each quick (10-queens above). So `solve all` without a `limit` or an objective
+splits the work instead (`Hooks::parallel`, given by the CLI when `--threads` is above 1).
+- **Cubes:** a cube fixes the first k bits of the solve targets, with 2ᵏ ≥ 8 cubes per worker
+  for balance.
+- **Workers:** each builds its own circuit and single-threaded solver, takes cubes from a shared
+  counter, and enumerates each under assumptions. One solver thus serves all its cubes, and its
+  blocking clauses only exclude solutions it has reported.
+- **Order:** solutions are reported cube by cube, each cube's sorted by the targets' values, so
+  the output is identical from run to run (though not the same order as `-j 1`).
+- **Why no `limit`:** reporting a cube means finishing it, that is, proving it has no further
+  solutions. A limited search never has to prove that, and on hard problems the proof can cost
+  far more than the solutions: Pell's equation, `limit 2`, would never finish.
+- **Stopping:** a body that fails stops every worker through its solver's interrupter. Each
+  worker withdraws its interrupter before dropping its solver.
+
+Measured with 4 threads against the 4-member portfolio: all solutions of 10-queens in 0.41 s
+instead of 0.81 s; 8-queens, sums of two squares and Pythagorean triples 1.4–2.1× faster. The
+playground runs the compiler in one Web Worker, so it does not enumerate in parallel.
+
 ## 6. Tooling
 
 ### 6.1 Command line

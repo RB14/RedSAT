@@ -17,8 +17,8 @@ mod repl;
 use clap::{Args, Parser, Subcommand};
 use redsat_lang::config::{find_config, load_config};
 use redsat_lang::{
-    Answer, AskFn, CompilerOptions, ExplicitTypes, Hooks, OptionLayer, SourceFile, TraceFn,
-    UnboundedInts,
+    Answer, AskFn, CompilerOptions, ExplicitTypes, Hooks, OptionLayer, Parallel, SourceFile,
+    TraceFn, UnboundedInts,
 };
 use redsat_sat::{Cadical, Cdcl, Portfolio, SolveResult, Solver, dimacs};
 
@@ -265,10 +265,16 @@ fn run(file: &Path, cli: &Cli) -> Result<ExitCode, Box<dyn Error>> {
         let _ = io::stdout().flush();
         eprintln!("[redsat] {line}");
     };
+    // `solve all` enumerates on the same threads, one single-threaded solver each.
+    let parallel = Parallel {
+        workers: cli.threads.max(1),
+        solver: Box::new(solver_factory(&cli.solver, 1)),
+    };
     let hooks = Hooks {
         ask: cli.interactive.then_some(&ask as &AskFn),
         trace: cli.verbose.then_some(&trace as &TraceFn),
         cancel: None,
+        parallel: (cli.threads > 1).then_some(&parallel),
     };
     let outcome = redsat_lang::run_with(&source, &options, &factory, &mut out, hooks);
     out.flush()?;

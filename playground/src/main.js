@@ -2,7 +2,7 @@
 
 import { RACE, SOLVERS, raceMembers, solverById } from './backends.js';
 import { Compiler } from './compiler.js';
-import { createDropdown } from './dropdown.js';
+import { createDropdown, placePanel } from './dropdown.js';
 import { createEditor } from './editor.js';
 import { renderHome } from './home.js';
 import { setupSwitcher } from './switcher.js';
@@ -492,15 +492,17 @@ function setupOptions() {
   });
 }
 
+/** The ⋯ menu on phones: actions that do not fit the top bar. (Files, examples and "New file"
+ * are in the file switcher; the options are in the bottom bar.) */
 function setupMenu() {
   const menu = $('menu');
-  $('menu-button').addEventListener('click', () => menu.showModal());
-  menu.addEventListener('click', (event) => {
-    if (event.target === menu || event.target.closest('[data-close]')) menu.close();
+  const button = $('menu-button');
+  menu.addEventListener('toggle', (event) => {
+    const open = event.newState === 'open';
+    button.setAttribute('aria-expanded', String(open));
+    if (open) placePanel(menu, button, 280);
   });
-  $('menu-new').addEventListener('click', () => (menu.close(), newFile()));
-  $('menu-home').addEventListener('click', () => (menu.close(), showView('home')));
-  $('menu-share').addEventListener('click', () => (menu.close(), share()));
+  $('menu-share').addEventListener('click', () => (menu.hidePopover(), share()));
 }
 
 // --- start-up -------------------------------------------------------------------------------
@@ -578,7 +580,7 @@ async function start() {
   $('version').textContent = `RedSAT ${hello.version}`;
 
   editor = createEditor({ parent: $('editor'), words: lexicon(hello.vocabulary), analyze, onRun: runProgram, onChange: onEdit });
-  setupMobile({ editor, query: phone, options: $('options'), desktopSlot: $('options-slot'), mobileSlot: $('menu-options') });
+  setupMobile({ query: phone, options: $('options'), desktopSlot: $('options-slot'), mobileSlot: $('mobile-options') });
   setStatus('idle', 'Ready');
 
   const shared = await decodeShare(location.hash);

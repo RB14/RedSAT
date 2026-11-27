@@ -1,65 +1,14 @@
-// The phone layout: Code/Output tabs, a bottom bar with Run and a row of symbol keys that rides
-// above the on-screen keyboard, and the options moved into the menu sheet.
-
-import { cursorCharLeft, cursorCharRight, indentMore, undo } from '@codemirror/commands';
-
-/** [label, what to insert or a command]. */
-const KEYS = [
-  ['⇥', 'indent'],
-  ['(', '('],
-  [')', ')'],
-  ['[', '['],
-  [']', ']'],
-  ['{', '{'],
-  ['}', '}'],
-  ['?', '?'],
-  ['=', '='],
-  ['==', ' == '],
-  ['<', '<'],
-  ['>', '>'],
-  ['+', '+'],
-  ['-', '-'],
-  ['*', '*'],
-  ['/', '/'],
-  ['%', '%'],
-  ['..', '..'],
-  ['..=', '..='],
-  [':', ': '],
-  [',', ', '],
-  ['"', '"'],
-  ["'", "'"],
-  ['_', '_'],
-  ['!=', ' != '],
-  ['<=', ' <= '],
-  ['>=', ' >= '],
-  ['←', 'left'],
-  ['→', 'right'],
-  ['↶', 'undo'],
-];
+// The phone layout: Code/Output tabs, and a bottom bar with the run options (verbose, strict,
+// solver) and Run, which rides above the on-screen keyboard.
 
 /**
  * @param {object} options
- * @param {object} options.editor            the editor API (see editor.js)
  * @param {MediaQueryList} options.query     matches on phones
  * @param {HTMLElement} options.options      the options panel (verbose, strict, solver)
- * @param {HTMLElement} options.desktopSlot  where it lives on wide screens
- * @param {HTMLElement} options.mobileSlot   where it lives on phones (in the menu sheet)
+ * @param {HTMLElement} options.desktopSlot  where it lives on wide screens (the output pane)
+ * @param {HTMLElement} options.mobileSlot   where it lives on phones (the bottom bar)
  */
-export function setupMobile({ editor, query, options, desktopSlot, mobileSlot }) {
-  const keys = document.getElementById('keys');
-  for (const [label, action] of KEYS) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = label;
-    button.setAttribute('aria-label', action.length > 1 && /^[a-z]+$/.test(action) ? action : `insert ${label}`);
-    // Pointer-down with preventDefault keeps the focus (and the keyboard) in the editor.
-    button.addEventListener('pointerdown', (event) => {
-      event.preventDefault();
-      perform(editor, action);
-    });
-    keys.append(button);
-  }
-
+export function setupMobile({ query, options, desktopSlot, mobileSlot }) {
   // Size the app to the visual viewport, so the on-screen keyboard shrinks the editor instead of
   // covering it (iOS does not resize the layout viewport).
   const viewport = window.visualViewport;
@@ -83,26 +32,6 @@ export function setupMobile({ editor, query, options, desktopSlot, mobileSlot })
   const place = () => (query.matches ? mobileSlot : desktopSlot).append(options);
   query.addEventListener('change', place);
   place();
-}
-
-function perform(editor, action) {
-  const view = editor.view;
-  switch (action) {
-    case 'indent':
-      indentMore(view);
-      break;
-    case 'left':
-      cursorCharLeft(view);
-      break;
-    case 'right':
-      cursorCharRight(view);
-      break;
-    case 'undo':
-      undo(view);
-      break;
-    default:
-      editor.insert(action);
-  }
 }
 
 /** Shows the Code or Output tab (on phones). */

@@ -4,6 +4,29 @@
 
 let nextId = 0;
 
+/** Places a popover `panel` next to the button that opens it: below, unless there is more room
+ * above (e.g. at the bottom of the screen); right-aligned with the button near the right edge,
+ * else left-aligned. */
+export function placePanel(panel, button, maxWidth = 360) {
+  const rect = button.getBoundingClientRect();
+  const width = Math.min(maxWidth, window.innerWidth - 16);
+  panel.style.width = `${width}px`;
+  panel.style.maxHeight = '';
+  const height = panel.offsetHeight;
+  const below = window.innerHeight - rect.bottom - 14;
+  const above = rect.top - 14;
+  if (height > below && above > below) {
+    const room = Math.min(height, above);
+    panel.style.maxHeight = `${room}px`;
+    panel.style.top = `${rect.top - 6 - room}px`;
+  } else {
+    panel.style.maxHeight = `${Math.max(120, below)}px`;
+    panel.style.top = `${rect.bottom + 6}px`;
+  }
+  const left = rect.left + width > window.innerWidth - 8 ? rect.right - width : rect.left;
+  panel.style.left = `${Math.max(8, left)}px`;
+}
+
 /**
  * @param {object} options
  * @param {{value: string, label: string, detail?: string}[]} options.choices
@@ -82,27 +105,7 @@ export function createDropdown({ choices, value, label, onChange }) {
     });
   }
 
-  function place() {
-    const rect = button.getBoundingClientRect();
-    const width = Math.min(360, window.innerWidth - 16);
-    panel.style.width = `${width}px`;
-    // Below the button, unless there is more room above it (e.g. at the bottom of a sheet).
-    panel.style.maxHeight = '';
-    const height = panel.offsetHeight;
-    const below = window.innerHeight - rect.bottom - 14;
-    const above = rect.top - 14;
-    if (height > below && above > below) {
-      const room = Math.min(height, above);
-      panel.style.maxHeight = `${room}px`;
-      panel.style.top = `${rect.top - 6 - room}px`;
-    } else {
-      panel.style.maxHeight = `${Math.max(120, below)}px`;
-      panel.style.top = `${rect.bottom + 6}px`;
-    }
-    // Right-aligned with the button when it is near the right edge, else left-aligned.
-    const left = rect.left + width > window.innerWidth - 8 ? rect.right - width : rect.left;
-    panel.style.left = `${Math.max(8, left)}px`;
-  }
+  const place = () => placePanel(panel, button);
 
   panel.addEventListener('toggle', (event) => {
     const open = event.newState === 'open';

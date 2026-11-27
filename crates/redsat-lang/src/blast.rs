@@ -223,7 +223,9 @@ impl Blaster<'_> {
             }
             Term::AllDifferent(items) => Bits::Bool(self.all_different(items)),
             Term::Eq(a, b) | Term::Lt(a, b) | Term::Le(a, b) => {
-                if let Some(decided) = decided_by_ranges(term, &self.sizes[a.index()], &self.sizes[b.index()]) {
+                if let Some(decided) =
+                    decided_by_ranges(term, &self.sizes[a.index()], &self.sizes[b.index()])
+                {
                     return Bits::Bool(if decided { Edge::TRUE } else { Edge::FALSE });
                 }
                 if let Some(edge) = self.cardinality(term) {

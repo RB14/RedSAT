@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "wasm": "node scripts/build-wasm.mjs",
-    "build": "npm run wasm && node scripts/build.mjs",
+    "solvers": "node scripts/build-solvers.mjs",
+    "build": "npm run wasm && npm run solvers && node scripts/build.mjs",
     "bundle": "node scripts/build.mjs",
     "dev": "npm run wasm && node scripts/build.mjs --serve",
     "test": "node --test scripts/*.test.mjs"

@@ -4,7 +4,7 @@
 //   node scripts/build.mjs           build once (minified)
 //   node scripts/build.mjs --serve   build, watch and serve on http://localhost:8000
 
-import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import * as esbuild from 'esbuild';
@@ -29,6 +29,13 @@ function copyStatic() {
     copyFileSync(here(`src/${file}`), `${dist}/${file}`);
   }
   copyFileSync(here('pkg/redsat_wasm_bg.wasm'), `${dist}/redsat_wasm_bg.wasm`);
+  // The solvers built by build-solvers.mjs, if any (the built-in solver needs none of them).
+  if (existsSync(here('pkg/solvers'))) {
+    mkdirSync(`${dist}/solvers`, { recursive: true });
+    for (const file of readdirSync(here('pkg/solvers'))) {
+      copyFileSync(here(`pkg/solvers/${file}`), `${dist}/solvers/${file}`);
+    }
+  }
   const examples = loadExamples(here('../examples'));
   writeFileSync(`${dist}/examples.json`, JSON.stringify(examples));
   return examples.length;

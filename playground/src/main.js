@@ -1,6 +1,6 @@
 // The RedSAT playground: write a program or open an example, and run it in the browser.
 
-import { SOLVERS, solverById } from './backends.js';
+import { RACE, SOLVERS, solverById } from './backends.js';
 import { Compiler } from './compiler.js';
 import { createEditor } from './editor.js';
 import { renderHome } from './home.js';
@@ -15,7 +15,9 @@ const $ = (id) => document.getElementById(id);
 const MAX_LINES = 5000;
 
 const store = new Store();
-const runner = new Compiler();
+/** Workers that run programs: the first runs single-solver programs; a race uses one each. */
+const runners = [new Compiler()];
+const runner = (index) => (runners[index] ??= new Compiler());
 const analyzer = new Compiler();
 const phone = matchMedia('(max-width: 760px)');
 
@@ -92,7 +94,7 @@ function renderDocumentActions() {
 
 function renderSlowNote() {
   const note = $('slow-note');
-  const show = Boolean(doc?.slow) && store.settings.solver === 'builtin';
+  const show = Boolean(doc?.slow) && ['builtin', 'minisat'].includes(store.settings.solver);
   note.hidden = !show;
   if (!show) return;
   $('slow-text').textContent = `⏳ ${doc.slow}`;
@@ -280,30 +282,72 @@ function setRunning(value) {
   document.body.classList.toggle('running', value);
 }
 
+/**
+ * Runs the program with every solver at once, one worker each. The first to finish wins: its
+ * output is shown and the others are stopped. Resolves to {result, solver}.
+ */
+function race(request, onStatus) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const failures = [];
+    SOLVERS.forEach((solver, index) => {
+      const output = [];
+      runner(index)
+        .request(
+          { ...request, solver: solver.id },
+          {
+            onOutput: (text) => output.push(['out', text]),
+            onTrace: (text) => output.push(['trace', `${text}\n`]),
+            onStatus: (text) => onStatus(`${solver.label}: ${text}`),
+          },
+        )
+        .then(({ result }) => {
+          if (settled) return;
+          settled = true;
+          SOLVERS.forEach((_, other) => other !== index && runner(other).restart('lost the race'));
+          for (const [kind, text] of output) emit(kind, text);
+          resolve({ result, solver });
+        })
+        .catch((error) => {
+          if (settled || error.message === 'lost the race') return;
+          failures.push(error);
+          if (failures.length === SOLVERS.length) {
+            settled = true;
+            reject(failures[0]);
+          }
+        });
+    });
+  });
+}
+
 async function runProgram() {
   if (running || !editor || !doc) return;
   clearOutput();
   $('stats').textContent = '';
   setRunning(true);
   if (phone.matches) showTab('output');
-  const solver = solverById(store.settings.solver);
+  const racing = store.settings.solver === RACE.id;
+  let solver = solverById(store.settings.solver);
   const started = performance.now();
-  let status = 'Running';
+  let status = racing ? `Racing ${SOLVERS.length} solvers` : 'Running';
   const tick = () => setStatus('running', `${status}… ${formatTime(performance.now() - started)}`);
   tick();
   const timer = setInterval(tick, 100);
+  const onStatus = (text) => {
+    status = text.replace(/…$/, '');
+    tick();
+  };
   try {
-    const { result } = await runner.request(
-      { type: 'run', name: doc.fileName, source: editor.text, config: config(), verbose: store.settings.verbose, solver: solver.id },
-      {
-        onOutput: (text) => emit('out', text),
-        onTrace: (text) => emit('trace', `${text}\n`),
-        onStatus: (text) => {
-          status = text.replace(/…$/, '');
-          tick();
-        },
-      },
-    );
+    const request = { type: 'run', name: doc.fileName, source: editor.text, config: config(), verbose: store.settings.verbose };
+    let result;
+    if (racing) {
+      ({ result, solver } = await race(request, onStatus));
+    } else {
+      ({ result } = await runner(0).request(
+        { ...request, solver: solver.id },
+        { onOutput: (text) => emit('out', text), onTrace: (text) => emit('trace', `${text}\n`), onStatus },
+      ));
+    }
     flushOutput();
     for (const diagnostic of result.diagnostics) emitDiagnostic(diagnostic);
     editor.showDiagnostics(result.diagnostics);
@@ -311,7 +355,7 @@ async function runProgram() {
     if (!$('output').childElementCount && !output.queue.length) emit('system', '(the program printed nothing)\n');
     const elapsed = formatTime(performance.now() - started);
     const errors = result.diagnostics.filter((d) => d.severity === 'error').length;
-    const used = result.solves.length ? ` · ${solver.label}` : '';
+    const used = !result.solves.length ? '' : racing ? ` · ${solver.label} won the race` : ` · ${solver.label}`;
     if (result.ok) setStatus('ok', `✓ Finished in ${elapsed}${used}`);
     else setStatus('error', `✗ ${plural(errors, 'error')} · ${elapsed}`);
     showStats(result);
@@ -335,7 +379,7 @@ async function runProgram() {
 }
 
 function stopProgram() {
-  if (running) runner.restart();
+  if (running) runners.forEach((worker) => worker.restart());
 }
 
 /** The compiler's analysis for the editor (the latest request wins). */
@@ -413,8 +457,8 @@ function setupOptions() {
     });
   }
   const select = $('solver');
-  select.replaceChildren(...SOLVERS.map((solver) => new Option(`${solver.label} — ${solver.detail}`, solver.id)));
-  select.value = solverById(store.settings.solver).id;
+  select.replaceChildren(...[...SOLVERS, RACE].map((solver) => new Option(`${solver.label} (${solver.detail})`, solver.id)));
+  select.value = store.settings.solver === RACE.id ? RACE.id : solverById(store.settings.solver).id;
   select.addEventListener('change', () => {
     store.settings.solver = select.value;
     store.saveSettings();
@@ -482,7 +526,7 @@ async function start() {
   let hello;
   try {
     [hello, examples] = await Promise.all([
-      runner.request({ type: 'hello' }),
+      runner(0).request({ type: 'hello' }),
       fetch('examples.json').then((response) => response.json()),
     ]);
   } catch (error) {

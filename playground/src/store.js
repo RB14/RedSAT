@@ -46,7 +46,7 @@ export class Store {
     this.files = load(KEYS.files, []);
     /** Your edits to the examples, by example name. */
     this.edits = load(KEYS.edits, {});
-    this.settings = { verbose: false, strict: false, solver: 'builtin', ...load(KEYS.settings, {}) };
+    this.settings = { verbose: false, strict: false, solver: 'cadical', ...load(KEYS.settings, {}) };
   }
 
   // --- your files ---

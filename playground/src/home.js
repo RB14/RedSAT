@@ -1,34 +1,12 @@
 // The home view: a welcome for newcomers, your files, and the examples by category.
 //
 // On phones it is two pages: the landing (the introduction, a short example and the two ways to
-// start) and the examples, which "Start with an example" opens. The examples page is a history
-// entry, so the system back gesture returns to the landing.
+// start) and the examples (#/examples), which "Start with an example" opens. The router in
+// main.js decides which page shows.
 
 const CATEGORY_ORDER = ['Getting started', 'Puzzles', 'Planning & optimization', 'Numbers', 'Strings & bits', 'More'];
 
 const phone = window.matchMedia('(max-width: 760px)');
-
-/** The page the home view shows on phones: 'landing' or 'examples'. */
-let page = 'landing';
-/** The home view's container, while it is rendered. */
-let pages = null;
-
-function showPage(name, { push = false } = {}) {
-  page = name;
-  if (!pages) return;
-  pages.dataset.page = name;
-  pages.closest('.home')?.scrollTo({ top: 0 });
-  if (push) history.pushState({ redsatHome: name }, '');
-}
-
-window.addEventListener('popstate', (event) => {
-  if (page === 'examples' && event.state?.redsatHome !== 'examples') showPage('landing');
-});
-
-function backToLanding() {
-  if (history.state?.redsatHome === 'examples') history.back();
-  else showPage('landing');
-}
 
 function h(tag, attributes = {}, ...children) {
   const element = document.createElement(tag);
@@ -70,9 +48,11 @@ function teaser() {
  * Renders the home view into `root`.
  * @param {HTMLElement} root
  * @param {object} state  {examples, files, current, firstVisit}
- * @param {object} actions  {newFile, openExample(name), openFile(id), deleteFile(id), close}
+ * @param {object} actions  {newFile, openExample(name), openFile(id), deleteFile(id), close,
+ *                           browseExamples, leaveExamples}
+ * @param {'landing'|'examples'} page  which page shows on phones
  */
-export function renderHome(root, state, actions) {
+export function renderHome(root, state, actions, page = 'landing') {
   const { examples, files, current, firstVisit } = state;
 
   const hero = h(
@@ -96,7 +76,7 @@ export function renderHome(root, state, actions) {
           'button',
           {
             class: 'big',
-            onclick: () => (phone.matches ? showPage('examples', { push: true }) : actions.openExample(examples[0].name)),
+            onclick: () => (phone.matches ? actions.browseExamples() : actions.openExample(examples[0].name)),
           },
           'Start with an example',
         ),
@@ -180,11 +160,11 @@ export function renderHome(root, state, actions) {
   const examplesHead = h(
     'div',
     { class: 'home-page-head' },
-    h('button', { class: 'ghost', onclick: backToLanding }, '← Back'),
+    h('button', { class: 'ghost', onclick: actions.leaveExamples }, '← Back'),
     h('h2', {}, 'Choose an example'),
   );
 
-  pages = h(
+  const pages = h(
     'div',
     { class: 'home-inner', 'data-page': page },
     close,
@@ -195,9 +175,4 @@ export function renderHome(root, state, actions) {
     exampleShelves,
   );
   root.replaceChildren(pages);
-}
-
-/** Shows the landing page the next time the home view opens (on phones). */
-export function resetHomePage() {
-  page = 'landing';
 }

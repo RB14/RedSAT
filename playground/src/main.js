@@ -4,7 +4,8 @@ import { RACE, SOLVERS, raceMembers, solverById } from './backends.js';
 import { Compiler } from './compiler.js';
 import { createDropdown, placePanel } from './dropdown.js';
 import { createEditor } from './editor.js';
-import { renderHome, resetHomePage } from './home.js';
+import { renderHome } from './home.js';
+import { exampleBySlug, exampleRoute, fileRoute, parseRoute } from './routes.js';
 import { setupSwitcher } from './switcher.js';
 import { markOutput, setupMobile, showTab } from './mobile.js';
 import { lexicon } from './rsat-language.js';
@@ -52,18 +53,74 @@ function sourceOf(document) {
   return sharedSource;
 }
 
-function open(document) {
-  doc = document;
-  resetHomePage();
-  if (document.kind !== 'shared') {
-    store.current = { kind: document.kind, id: document.id };
-    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+// --- routes -------------------------------------------------------------------------------
+//
+// Every view has an address (see routes.js), so the browser's back and forward buttons work and
+// any page can be linked to.
+
+const fileByRoute = (key) => store.files.find((file) => file.name === key) ?? store.file(key);
+
+/** The address of a document; null for a shared program, whose address is its source. */
+function routeOf(document) {
+  if (document.kind === 'example') return exampleRoute(exampleNamed(document.id));
+  if (document.kind === 'file') return fileRoute(store.file(document.id)?.name ?? document.id);
+  return null;
+}
+
+/** Shows `hash` in the address bar: a new history entry, or in place of the current one. */
+function go(hash, { replace = false } = {}) {
+  if (!hash || location.hash === hash) return;
+  history[replace ? 'replaceState' : 'pushState'](null, '', hash);
+}
+
+/** Shows what the address names (on start, back, forward, or a link pasted into this tab). */
+async function applyRoute({ initial = false } = {}) {
+  const hash = location.hash;
+  const source = await decodeShare(hash);
+  if (source !== null) {
+    if (doc?.kind === 'shared' && source === editor.text) return;
+    sharedSource = source;
+    open(sharedDoc(), { route: false });
+    return;
   }
+  const { section, key } = parseRoute(hash);
+  if (section === 'examples' && key) {
+    const example = exampleBySlug(examples, key);
+    if (example) return open(exampleDoc(example), { route: false });
+    toast(`There is no example called “${key}”`);
+  } else if (section === 'files' && key) {
+    const file = fileByRoute(key);
+    if (file) return open(fileDoc(file), { route: false });
+    toast(`“${key}.rsat” is not in this browser: your files stay where you made them`);
+  } else if (section === 'examples') {
+    return showView('home', { route: false, page: 'examples' });
+  } else if (!hash && initial) {
+    // A bare address: pick up where the last visit left off.
+    const last = store.current;
+    const lastDoc =
+      last?.kind === 'example' && exampleNamed(last.id)
+        ? exampleDoc(exampleNamed(last.id))
+        : last?.kind === 'file' && store.file(last.id)
+          ? fileDoc(store.file(last.id))
+          : null;
+    if (lastDoc && store.visited) return open(lastDoc, { replace: true });
+  }
+  showView('home', { route: false });
+  if (section) go('#/', { replace: true });
+}
+
+/** Opens `document` in the editor; with `route`, as a new history entry (or `replace`). */
+function open(document, { route = true, replace = false } = {}) {
+  doc = document;
+  if (document.kind !== 'shared') store.current = { kind: document.kind, id: document.id };
+  // An address given by another name (`#/examples/n_queens`) is corrected in place: pushing the
+  // usual name would make the back button return to the alias, which would come right back.
+  if (route || routeOf(document)) go(routeOf(document), { replace: replace || !route });
   store.markVisited();
   editor.load(sourceOf(document));
   renderDocument();
   resetOutput();
-  showView('editor');
+  showView('editor', { route: false });
   showTab('code');
   if (!phone.matches) editor.focus();
 }
@@ -122,6 +179,7 @@ function renameFile() {
   store.updateFile(doc.id, { name: unique });
   doc = fileDoc(store.file(doc.id));
   renderDocument();
+  go(routeOf(doc), { replace: true });
 }
 
 function saveCopy() {
@@ -143,9 +201,10 @@ function deleteFile(id) {
     $('file-name').textContent = 'Choose a file';
     document.title = 'RedSAT Playground';
     resetOutput();
-    showView('home');
+    showView('home', { route: false });
+    go('#/', { replace: true });
   } else if (document.body.dataset.view === 'home') {
-    showView('home');
+    showView('home', { route: false });
   }
   toast(`Deleted ${file.name}.rsat`);
 }
@@ -159,11 +218,17 @@ function resetExample() {
 
 // --- views ----------------------------------------------------------------------------------
 
-function showView(view) {
+/**
+ * Shows the editor or the home view (`page`: 'landing' or 'examples'). With `route`, the
+ * address follows as a new history entry.
+ */
+function showView(view, { route = true, page = 'landing' } = {}) {
   if (view === 'editor' && !doc) view = 'home';
   document.body.dataset.view = view;
   $('home').hidden = view !== 'home';
+  if (route) go(view === 'home' ? (page === 'examples' ? '#/examples' : '#/') : routeOf(doc) ?? location.hash);
   if (view === 'home') {
+    document.title = 'RedSAT Playground';
     renderHome(
       $('home'),
       { examples, files: store.files, current: doc && { kind: doc.kind, id: doc.id }, firstVisit: !store.visited },
@@ -173,11 +238,23 @@ function showView(view) {
         openFile: (id) => open(fileDoc(store.file(id))),
         deleteFile,
         close: () => showView('editor'),
+        browseExamples: () => showView('home', { page: 'examples' }),
+        // Back from the examples page: to where we came from, if that was the landing.
+        leaveExamples: () => (history.state?.fromLanding ? history.back() : showView('home')),
       },
+      page,
     );
     $('home').scrollTop = 0;
+    if (page === 'examples') {
+      if (phone.matches) history.replaceState({ fromLanding: cameFromLanding }, '');
+      else document.querySelector('.examples-title')?.scrollIntoView();
+    }
   }
+  cameFromLanding = view === 'home' && page === 'landing';
 }
+
+/** Whether the home landing was showing before the examples page (see leaveExamples). */
+let cameFromLanding = false;
 
 // --- output panel ---------------------------------------------------------------------------
 
@@ -512,7 +589,9 @@ function toast(message) {
 }
 
 async function share() {
-  const hash = await encodeShare(editor.text);
+  // An unchanged example has a short, readable address; anything else travels in the link.
+  const unchanged = doc?.kind === 'example' && editor.text === exampleNamed(doc.id).source;
+  const hash = unchanged ? routeOf(doc) : await encodeShare(editor.text);
   const url = `${location.origin}${location.pathname}${hash}`;
   history.replaceState(null, '', hash);
   if (phone.matches && navigator.share) {
@@ -626,13 +705,14 @@ async function start() {
       newFile,
       openFile: (id) => open(fileDoc(store.file(id))),
       openExample: (name) => open(exampleDoc(exampleNamed(name))),
-      browse: () => showView('home'),
+      browse: () => showView('home', { page: 'examples' }),
     },
   });
   $('brand').addEventListener('click', (event) => {
     event.preventDefault();
     showView('home');
   });
+  $('brand').setAttribute('href', '#/');
   $('reset').addEventListener('click', resetExample);
   $('save-copy').addEventListener('click', saveCopy);
   $('delete-file').addEventListener('click', () => deleteFile(doc.id));
@@ -673,29 +753,9 @@ async function start() {
   setupMobile({ query: phone, options: $('options'), desktopSlot: $('options-slot'), mobileSlot: $('mobile-options') });
   setStatus('idle', 'Ready');
 
-  const shared = await decodeShare(location.hash);
-  if (shared !== null) {
-    sharedSource = shared;
-    open(sharedDoc());
-  } else {
-    const last = store.current;
-    const lastDoc =
-      last?.kind === 'example' && exampleNamed(last.id)
-        ? exampleDoc(exampleNamed(last.id))
-        : last?.kind === 'file' && store.file(last.id)
-          ? fileDoc(store.file(last.id))
-          : null;
-    if (lastDoc && store.visited) open(lastDoc);
-    else showView('home');
-  }
-
-  // A share link opened in a tab that already shows the playground.
-  window.addEventListener('hashchange', async () => {
-    const source = await decodeShare(location.hash);
-    if (source === null || (doc?.kind === 'shared' && source === editor.text)) return;
-    sharedSource = source;
-    open(sharedDoc());
-  });
+  await applyRoute({ initial: true });
+  // Back, forward, and addresses typed or pasted into this tab.
+  window.addEventListener('hashchange', () => applyRoute());
 }
 
 start().catch(failedToStart);

@@ -30,7 +30,9 @@ $ redsat examples/factor.rsat
 
 - ▶️ **[Open the playground](https://rb14.github.io/redsat/).** Edit and run programs in your
   browser; nothing to install. The compiler and the SAT solvers (CaDiCaL, MiniSat and RedSAT's
-  own) run on your device as WebAssembly.
+  own) run on your device as WebAssembly. Every example has its own address, e.g.
+  [Sudoku](https://rb14.github.io/redsat/#/examples/sudoku) or
+  [SEND + MORE = MONEY](https://rb14.github.io/redsat/#/examples/send-more-money).
 - 📖 **[Read the RedSAT Guide](https://rb14.github.io/redsat/guide/).** It has a tutorial, a
   cookbook of modelling patterns and a complete reference. Every code sample in it is tested
   against the compiler. The [documentation index](#documentation) below links each chapter's

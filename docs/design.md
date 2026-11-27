@@ -949,10 +949,18 @@ the visitor's browser.
   go-to-definition.
 - **Documents.** The examples are generated from `examples/` at build time. Your own files and
   your edits live in `localStorage`. Share links carry the program, compressed, in the URL
-  fragment, which never reaches a server.
+  fragment, which never reaches a server; an unchanged example shares its address instead.
+- **Addresses.** Every view has one, in the URL fragment, so back and forward work and pages can
+  be linked to: `#/` (home), `#/examples`, `#/examples/send-more-money` (by title; the file
+  name works too, and is corrected in place), `#/files/my-puzzle` (your files, by name).
+  GitHub Pages serves no other paths to a single-page app (only the site's root `404.html`),
+  which rules out path-style addresses. Unknown names fall back to home with a note, replacing
+  their history entry, so the back button never leads to a dead end.
 - **Phones.** Below 760 px the layout changes: Code and Output become tabs, Run moves to a
-  bottom bar with a row of symbol keys above the on-screen keyboard, and the app is sized to
-  the visual viewport, so the keyboard shrinks the editor instead of covering it.
+  bottom bar with the run options (verbose, strict, solver) above the on-screen keyboard, and
+  the app is sized to the visual viewport, so the keyboard shrinks the editor instead of
+  covering it. The ⋯ menu holds Share and Guide, and the home view is two pages: a landing and
+  the examples.
 
 ## 7. Testing strategy
 

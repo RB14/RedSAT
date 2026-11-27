@@ -133,12 +133,18 @@ function deleteFile(id) {
   if (!file || !confirm(`Delete ${file.name}.rsat? This cannot be undone.`)) return;
   store.deleteFile(id);
   if (doc?.kind === 'file' && doc.id === id) {
+    // Nothing is open any more: say so everywhere the open document shows.
     doc = null;
     store.current = null;
+    editor.load('');
+    $('file-name').textContent = 'Choose a file';
+    document.title = 'RedSAT Playground';
+    resetOutput();
     showView('home');
   } else if (document.body.dataset.view === 'home') {
     showView('home');
   }
+  toast(`Deleted ${file.name}.rsat`);
 }
 
 function resetExample() {

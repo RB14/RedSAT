@@ -75,7 +75,7 @@ export function setupSwitcher({ button, panel, state, actions }) {
     for (const file of yours) {
       own.push(row(`${file.name}.rsat`, timeAgo(file.updated), () => actions.openFile(file.id), { current: isCurrent('file', file.id), kind: 'file' }));
     }
-    if (own.length) sections.push(h('div', { class: 'switcher-section' }, h('h3', {}, 'Your files'), own));
+    if (own.length) sections.push(section('Your files', yours.length, own));
 
     const byCategory = new Map();
     for (const example of examples) {
@@ -85,10 +85,9 @@ export function setupSwitcher({ button, panel, state, actions }) {
     }
     for (const [category, group] of byCategory) {
       sections.push(
-        h(
-          'div',
-          { class: 'switcher-section' },
-          h('h3', {}, category),
+        section(
+          category,
+          group.length,
           group.map((example) =>
             row(example.title, example.description, () => actions.openExample(example.name), {
               current: isCurrent('example', example.name),
@@ -102,6 +101,12 @@ export function setupSwitcher({ button, panel, state, actions }) {
     sections.push(h('div', { class: 'switcher-footer' }, row('Browse the examples gallery →', null, actions.browse, { kind: 'command' })));
     list.replaceChildren(...sections);
     highlight(words.length ? 0 : Math.max(0, rows.findIndex((r) => r.classList.contains('current'))));
+  }
+
+  /** A titled group of rows; its header stays in view while the group scrolls past. */
+  function section(title, count, rows) {
+    const header = h('h3', {}, h('span', {}, title), count ? h('span', { class: 'switcher-count' }, String(count)) : null);
+    return h('div', { class: 'switcher-section' }, header, rows);
   }
 
   function highlight(index) {

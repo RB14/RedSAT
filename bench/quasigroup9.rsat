@@ -1,0 +1,25 @@
+// Latin square completion (quasigroup with holes): a 9×9 grid with some cells given; every row
+// and column holds each value once.
+var n = 9
+var given = [
+    [1, 0, 0, 4, 0, 0, 7, 0, 0],
+    [0, 3, 0, 0, 6, 0, 0, 9, 0],
+    [0, 0, 5, 0, 0, 8, 0, 0, 2],
+    [4, 0, 0, 7, 0, 0, 1, 0, 0],
+    [0, 6, 0, 0, 9, 0, 0, 3, 0],
+    [0, 0, 8, 0, 0, 2, 0, 0, 5],
+    [7, 0, 0, 1, 0, 0, 4, 0, 0],
+    [0, 9, 0, 0, 3, 0, 0, 6, 0],
+    [0, 0, 2, 0, 0, 5, 0, 0, 8],
+]
+var square: [[int[1..=n]; n]; n]
+for r in 0..n {
+    for c in 0..n {
+        if given[r][c] != 0 { require square[r][c] == given[r][c] }
+    }
+    require all_different(square[r])
+    require all_different([square[i][r] for i in 0..n])
+}
+var solutions = 0
+solve all square limit 50 { solutions = solutions + 1 }
+print solutions

@@ -1,0 +1,13 @@
+// A 4×4 magic square: 1..16, every row, column and diagonal sums to 34.
+var n = 4
+var total = 34
+var square: [[int[1..=16]; 4]; 4]
+require all_different([square[r][c] for r in 0..n for c in 0..n])
+for i in 0..n {
+    require sum(square[i]) == total
+    require sum(square[r][i] for r in 0..n) == total
+}
+require sum(square[i][i] for i in 0..n) == total
+require sum(square[i][n - 1 - i] for i in 0..n) == total
+require square[0][0] < square[0][n - 1] and square[0][0] < square[n - 1][0] and square[0][0] < square[n - 1][n - 1]
+solve square { print square[0] }

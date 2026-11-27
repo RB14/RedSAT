@@ -2149,6 +2149,24 @@ impl<'a> Interpreter<'a> {
                 Ok(values.fold(first, |best, next| self.pick(name == "min", best, next)))
             }
             "all_different" => {
+                let integers = items.iter().all(|item| {
+                    item.cond.is_none()
+                        && matches!(
+                            item.value,
+                            Value::Int(_)
+                                | Value::Char(_)
+                                | Value::Enum(..)
+                                | Value::Sym(_, Tag::Int | Tag::Char | Tag::Enum(_))
+                        )
+                });
+                if integers {
+                    let terms: Vec<TermId> = items
+                        .iter()
+                        .map(|item| self.int_term(&item.value))
+                        .collect();
+                    let term = self.store.all_different(terms);
+                    return Ok(self.bool_value(term));
+                }
                 let mut all = Value::Bool(true);
                 for (i, a) in items.iter().enumerate() {
                     for b in &items[i + 1..] {

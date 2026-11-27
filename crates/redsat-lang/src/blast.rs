@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
+
 use redsat_circuit::{Aig, BitOp, Edge, IntVec, Layout, int};
 
 use crate::domain::{self, Interval};
@@ -196,6 +197,7 @@ impl Blaster<'_> {
                     remainder
                 })
             }
+            Term::AllDifferent(items) => Bits::Bool(self.all_different(items)),
             Term::Eq(a, b) | Term::Lt(a, b) | Term::Le(a, b) => {
                 let (x, y) = (self.int_of(*a), self.int_of(*b));
                 Bits::Bool(match term {
@@ -205,6 +207,22 @@ impl Blaster<'_> {
                 })
             }
         }
+    }
+
+    /// `all_different(items)`: the conjunction of pairwise inequalities.
+    ///
+    /// One-hot channeling (value indicators with at-most-one / at-least-one constraints) was
+    /// measured and rejected: it made quasigroup completion and Sudoku 2–4× slower with CaDiCaL,
+    /// and its pigeonhole-only variant was neutral (see design §5.5).
+    fn all_different(&mut self, items: &[TermId]) -> Edge {
+        let vectors: Vec<IntVec> = items.iter().map(|&item| self.int_of(item)).collect();
+        let mut pairwise = Vec::new();
+        for (i, a) in vectors.iter().enumerate() {
+            for b in &vectors[i + 1..] {
+                pairwise.push(!int::eq(self.aig, a, b));
+            }
+        }
+        self.aig.and_all(pairwise)
     }
 
     /// The quotient and remainder of the Euclidean division `a / b`, shared by `a / b` and

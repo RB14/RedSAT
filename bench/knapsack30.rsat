@@ -1,0 +1,10 @@
+// A 30-item knapsack (weights and values from a fixed pseudo-random sequence).
+var n = 30
+var weight = [(i * 37 + 11) % 50 + 5 for i in 0..n]
+var value = [(i * 53 + 7) % 60 + 10 for i in 0..n]
+var capacity = 300
+var take: [bool; n]
+require sum(weight[i] for i in 0..n if take[i]) <= capacity
+solve take maximize sum(value[i] for i in 0..n if take[i]) {
+    print sum(value[i] for i in 0..n if take[i])
+}

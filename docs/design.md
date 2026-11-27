@@ -587,13 +587,27 @@ reduction is polynomial in (program size × unrolled size × bit widths):
 | `c ? a : b`     | bitwise multiplexer                                      | O(n)     |
 | `/`, `%`        | relational: fresh `q, r` with `q·b + r = a`, `0 ≤ r < b` | O(n·m)   |
 
-### 5.5 Integer encodings (optimisation, later phases)
+### 5.5 Encodings, measured
 
-Binary (log) encoding is the default. Small domains that are used mostly with `==`/`!=`
-benefit from **one-hot** (direct) encoding; domains used mostly with `<` benefit from **order**
-(unary) encoding. Cardinality constraints (`count(…) <= k`) use sequential counters or
-totalizers. The compiler chooses per variable from its domain size and usage. Encoding choice
-often matters more for solve time than the choice of solver.
+Integers use binary (two's complement) encoding with exact, interval-derived widths. Each
+choice below was **measured** with the benchmark suite in `bench/` (`bench/run.sh`), not assumed:
+
+- **`all_different`** is a dedicated IR term (it folds constants and detects repeated operands),
+  encoded as pairwise inequalities. Adding a *one-hot view* (an indicator `x == v` per value,
+  with at-most-one and, for permutations, at-least-one per value) made quasigroup completion
+  and Sudoku 2–4× slower with CaDiCaL. It helped 10-Queens and 5×5 magic squares by up to 2×.
+  The pigeonhole-only variant (at-least-one for permutations) was neutral, within noise. Plain
+  pairwise inequality was kept.
+- **`sum` and `count`** build balanced addition trees, so intermediate widths grow with the
+  logarithm of the number of terms.
+- **Division** by a constant power of two is a bit slice; other divisions are relational.
+
+`--stats` splits each `solve` into *build* time (domains, circuit, CNF) and *search* time (SAT
+calls, decoding). On the largest benchmark (quasigroup completion of order 20: 123k AND gates)
+build takes 60 ms and search 530 ms. The SAT solver dominates, as it should.
+
+Cardinality networks (totalizers, sequential counters) and automatic symmetry breaking remain
+open experiments.
 
 ### 5.6 Solver backends
 

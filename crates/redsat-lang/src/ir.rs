@@ -109,6 +109,8 @@ pub enum Term {
     BitAnd(TermId, TermId),
     BitOr(TermId, TermId),
     BitXor(TermId, TermId),
+    /// No two of the integers are equal (encoded with a one-hot view when domains are small).
+    AllDifferent(Vec<TermId>),
     Eq(TermId, TermId),
     Lt(TermId, TermId),
     Le(TermId, TermId),
@@ -118,6 +120,9 @@ impl Term {
     /// The operand ids, in order.
     #[must_use]
     pub fn operands(&self) -> Vec<TermId> {
+        if let Self::AllDifferent(items) = self {
+            return items.clone();
+        }
         match *self {
             Self::Const(_) | Self::Unknown(_) => vec![],
             Self::Not(a) | Self::Neg(a) => vec![a],
@@ -136,6 +141,7 @@ impl Term {
             | Self::Lt(a, b)
             | Self::Le(a, b) => vec![a, b],
             Self::Ite(c, a, b) => vec![c, a, b],
+            Self::AllDifferent(_) => unreachable!("handled above"),
         }
     }
 }
@@ -405,6 +411,26 @@ impl TermStore {
         self.intern(term, Sort::Int)
     }
 
+    /// No two of the integer terms are equal.
+    pub fn all_different(&mut self, mut items: Vec<TermId>) -> TermId {
+        items.sort_unstable();
+        if items.windows(2).any(|pair| pair[0] == pair[1]) {
+            return self.bool(false);
+        }
+        let constants: Vec<&BigInt> = items.iter().filter_map(|&item| self.int_of(item)).collect();
+        if constants.len() == items.len() {
+            let mut seen = std::collections::HashSet::new();
+            let distinct = constants
+                .into_iter()
+                .all(|value| seen.insert(value.clone()));
+            return self.bool(distinct);
+        }
+        if items.len() < 2 {
+            return self.bool(true);
+        }
+        self.intern(Term::AllDifferent(items), Sort::Bool)
+    }
+
     /// `a implies b`.
     pub fn implies(&mut self, a: TermId, b: TermId) -> TermId {
         let not_a = self.not(a);
@@ -558,6 +584,10 @@ impl TermStore {
                 Term::BitAnd(a, b) => Constant::Int(int(*a) & int(*b)),
                 Term::BitOr(a, b) => Constant::Int(int(*a) | int(*b)),
                 Term::BitXor(a, b) => Constant::Int(int(*a) ^ int(*b)),
+                Term::AllDifferent(items) => {
+                    let mut seen = std::collections::HashSet::new();
+                    Constant::Bool(items.iter().all(|item| seen.insert(int(*item).clone())))
+                }
                 Term::Eq(a, b) => Constant::Bool(int(*a) == int(*b)),
                 Term::Lt(a, b) => Constant::Bool(int(*a) < int(*b)),
                 Term::Le(a, b) => Constant::Bool(int(*a) <= int(*b)),

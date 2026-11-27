@@ -1,0 +1,12 @@
+// Every solution of 10-Queens (724 of them): one SAT call per solution.
+var N = 10
+var queen: [int[0..N]; N]
+require all_different(queen)
+for r1 in 0..N {
+    for r2 in r1 + 1..N {
+        require abs(queen[r1] - queen[r2]) != r2 - r1
+    }
+}
+var count = 0
+solve all queen { count = count + 1 }
+print count

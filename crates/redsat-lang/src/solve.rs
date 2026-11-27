@@ -75,6 +75,10 @@ pub struct SolveStats {
     pub solutions: u64,
     /// The magnitude limit used for unbounded unknowns, if any.
     pub magnitude_bits: Option<u32>,
+    /// Time spent inferring domains and building the circuit and CNF.
+    pub build: Duration,
+    /// Time spent in SAT calls and decoding models.
+    pub search: Duration,
     /// Total time.
     pub elapsed: Duration,
 }
@@ -95,16 +99,18 @@ impl SolveStats {
             out += &format!("  unbounded unknowns searched with |x| < 2^{bits}\n");
         }
         out += &format!(
-            "  circuit: {} AND gates · CNF: {} variables, {} clauses\n  {} SAT call{} · {} \
-             solution{} · {:.2?}\n",
-            self.and_gates,
-            self.cnf_vars,
-            self.cnf_clauses,
+            "  circuit: {} AND gates · CNF: {} variables, {} clauses\n",
+            self.and_gates, self.cnf_vars, self.cnf_clauses
+        );
+        out += &format!(
+            "  {} SAT call{} · {} solution{} · {:.2?} (build {:.2?}, search {:.2?})\n",
             self.sat_calls,
             if self.sat_calls == 1 { "" } else { "s" },
             self.solutions,
             if self.solutions == 1 { "" } else { "s" },
-            self.elapsed
+            self.elapsed,
+            self.build,
+            self.search
         );
         out
     }
@@ -158,6 +164,7 @@ pub(crate) fn solve(
             .collect();
         stats.magnitude_bits = (!unbounded.is_empty()).then_some(magnitude);
 
+        let building = Instant::now();
         let mut attempt = Attempt::build(
             store,
             request.constraints,
@@ -169,7 +176,10 @@ pub(crate) fn solve(
         let objective_range = request
             .objective
             .map_or_else(Interval::full, |(_, term)| ranges[term.index()].clone());
+        stats.build += building.elapsed();
+        let searching = Instant::now();
         let outcome = attempt.run(request, &objective_range, on_solution)?;
+        stats.search += searching.elapsed();
         attempt.record(&mut stats, store, &relevant, &domains);
         let can_deepen =
             !unbounded.is_empty() && magnitude.saturating_mul(2) <= options.max_int_bits;

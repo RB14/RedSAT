@@ -13,6 +13,7 @@ redsat-sat = { path = "crates/redsat-sat", default-features = false }
 rustsat = "0.7.5"
 rustsat-cadical = "0.7.5"
 num-bigint = "0.4"
+num-traits = "0.2"
 clap = { version = "4", features = ["derive"] }
 
 [workspace.lints.rust]

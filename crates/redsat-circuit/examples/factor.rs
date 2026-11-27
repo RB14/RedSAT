@@ -12,19 +12,19 @@
 use std::process::ExitCode;
 use std::time::Instant;
 
-use num_bigint::BigUint;
-use redsat_circuit::{BitVec, CircuitSolver, bitvec};
+use num_bigint::BigInt;
+use redsat_circuit::{CircuitSolver, IntVec, Layout, int};
 use redsat_sat::{Cadical, ClauseSink, SolveResult};
 
 fn main() -> ExitCode {
     let argument = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "4295229443".into());
-    let Ok(n) = argument.parse::<BigUint>() else {
+    let Ok(n) = argument.parse::<BigInt>() else {
         eprintln!("usage: factor <positive integer>");
         return ExitCode::FAILURE;
     };
-    if n < BigUint::from(4u8) {
+    if n < BigInt::from(4) {
         println!("{n} has no factorization with both factors at least 2");
         return ExitCode::SUCCESS;
     }
@@ -36,14 +36,26 @@ fn main() -> ExitCode {
     let (x_width, y_width) = (n_bits.div_ceil(2), n_bits - 1);
     let mut cs = CircuitSolver::new(Cadical::new());
     let aig = cs.aig_mut();
-    let x = BitVec::new_input(aig, x_width);
-    let y = BitVec::new_input(aig, y_width);
-    let product = bitvec::mul(aig, &x, &y);
-    let one = BitVec::constant(&BigUint::from(1u8));
+    let x = IntVec::new_input(
+        aig,
+        Layout {
+            width: x_width,
+            signed: false,
+        },
+    );
+    let y = IntVec::new_input(
+        aig,
+        Layout {
+            width: y_width,
+            signed: false,
+        },
+    );
+    let product = int::mul(aig, &x, &y);
+    let one = IntVec::constant(&BigInt::from(1));
     let constraints = [
-        bitvec::eq(aig, &product, &BitVec::constant(&n)), // x * y == n
-        bitvec::lt(aig, &one, &x),                        // x > 1
-        bitvec::le(aig, &x, &y),                          // x <= y (symmetry breaking)
+        int::eq(aig, &product, &IntVec::constant(&n)), // x * y == n
+        int::lt(aig, &one, &x),                        // x > 1
+        int::le(aig, &x, &y),                          // x <= y (symmetry breaking)
     ];
     for constraint in constraints {
         cs.require(constraint);

@@ -1,23 +1,22 @@
 //! End-to-end: arithmetic circuits solved by CaDiCaL.
 
-use num_bigint::BigUint;
-use redsat_circuit::{BitVec, CircuitSolver, bitvec};
+use num_bigint::BigInt;
+use redsat_circuit::{CircuitSolver, IntVec, Layout, int};
 use redsat_sat::{Cadical, SolveResult};
 
 /// Requires `x * y == n` with `2 <= x <= y`, over inputs wide enough for any factor.
-fn factoring_problem(n: u64) -> (CircuitSolver<Cadical>, BitVec, BitVec) {
-    let n = BigUint::from(n);
-    let width = usize::try_from(n.bits()).unwrap() - 1; // both factors are at least 2
+fn factoring_problem(n: u64) -> (CircuitSolver<Cadical>, IntVec, IntVec) {
+    let n = BigInt::from(n);
+    let factor = Layout::for_range(&BigInt::from(0), &(&n / 2));
     let mut cs = CircuitSolver::new(Cadical::new());
     let aig = cs.aig_mut();
-    let x = BitVec::new_input(aig, width);
-    let y = BitVec::new_input(aig, width);
-    let one = BitVec::constant(&BigUint::from(1u8));
-    let product = bitvec::mul(aig, &x, &y);
+    let x = IntVec::new_input(aig, factor);
+    let y = IntVec::new_input(aig, factor);
+    let product = int::mul(aig, &x, &y);
     let constraints = [
-        bitvec::eq(aig, &product, &BitVec::constant(&n)),
-        bitvec::lt(aig, &one, &x),
-        bitvec::le(aig, &x, &y),
+        int::eq(aig, &product, &IntVec::constant(&n)),
+        int::lt(aig, &IntVec::constant(&BigInt::from(1)), &x),
+        int::le(aig, &x, &y),
     ];
     for constraint in constraints {
         cs.require(constraint);
@@ -29,8 +28,8 @@ fn factoring_problem(n: u64) -> (CircuitSolver<Cadical>, BitVec, BitVec) {
 fn factors_a_semiprime() {
     let (mut cs, x, y) = factoring_problem(1009 * 1013);
     assert_eq!(cs.solve(), SolveResult::Sat);
-    assert_eq!(cs.value_of(&x), BigUint::from(1009u32));
-    assert_eq!(cs.value_of(&y), BigUint::from(1013u32));
+    assert_eq!(cs.value_of(&x), BigInt::from(1009));
+    assert_eq!(cs.value_of(&y), BigInt::from(1013));
 }
 
 #[test]
@@ -46,12 +45,12 @@ fn enumerates_every_factorization_exactly_once() {
     let mut pairs = Vec::new();
     while cs.solve() == SolveResult::Sat {
         let (vx, vy) = (cs.value_of(&x), cs.value_of(&y));
-        pairs.push((u64::try_from(&vx).unwrap(), u64::try_from(&vy).unwrap()));
+        pairs.push((i64::try_from(&vx).unwrap(), i64::try_from(&vy).unwrap()));
         let projection: Vec<_> = x.bits().iter().chain(y.bits()).copied().collect();
         cs.block(&projection);
     }
     pairs.sort_unstable();
-    let expected: Vec<(u64, u64)> = (2..=18)
+    let expected: Vec<(i64, i64)> = (2..=18)
         .filter(|d| 360 % d == 0)
         .map(|d| (d, 360 / d))
         .filter(|(a, b)| a <= b)
@@ -64,12 +63,16 @@ fn projection_ignores_auxiliary_unknowns() {
     // x + y == 6 over 3-bit x and y, plus a 4-bit auxiliary z that only needs to exist (z > x).
     let mut cs = CircuitSolver::new(Cadical::new());
     let aig = cs.aig_mut();
-    let x = BitVec::new_input(aig, 3);
-    let y = BitVec::new_input(aig, 3);
-    let z = BitVec::new_input(aig, 4);
-    let sum = bitvec::add(aig, &x, &y);
-    let sum_is_six = bitvec::eq(aig, &sum, &BitVec::constant(&BigUint::from(6u8)));
-    let z_above_x = bitvec::lt(aig, &x, &z);
+    let small = |width| Layout {
+        width,
+        signed: false,
+    };
+    let x = IntVec::new_input(aig, small(3));
+    let y = IntVec::new_input(aig, small(3));
+    let z = IntVec::new_input(aig, small(4));
+    let sum = int::add(aig, &x, &y);
+    let sum_is_six = int::eq(aig, &sum, &IntVec::constant(&BigInt::from(6)));
+    let z_above_x = int::lt(aig, &x, &z);
     cs.require(sum_is_six);
     cs.require(z_above_x);
 
@@ -83,4 +86,36 @@ fn projection_ignores_auxiliary_unknowns() {
         count, 7,
         "(0,6), (1,5), …, (6,0), each once despite many valid z"
     );
+}
+
+#[test]
+fn solves_with_negative_numbers() {
+    // a, b ∈ [-8, 7] with a · b == -12 and a < b: (-6, 2), (-4, 3), (-3, 4), (-2, 6).
+    let mut cs = CircuitSolver::new(Cadical::new());
+    let aig = cs.aig_mut();
+    let nibble = Layout {
+        width: 4,
+        signed: true,
+    };
+    let a = IntVec::new_input(aig, nibble);
+    let b = IntVec::new_input(aig, nibble);
+    let product = int::mul(aig, &a, &b);
+    let constraints = [
+        int::eq(aig, &product, &IntVec::constant(&BigInt::from(-12))),
+        int::lt(aig, &a, &b),
+    ];
+    for constraint in constraints {
+        cs.require(constraint);
+    }
+    let mut pairs = Vec::new();
+    while cs.solve() == SolveResult::Sat {
+        pairs.push((
+            i64::try_from(cs.value_of(&a)).unwrap(),
+            i64::try_from(cs.value_of(&b)).unwrap(),
+        ));
+        let projection: Vec<_> = a.bits().iter().chain(b.bits()).copied().collect();
+        cs.block(&projection);
+    }
+    pairs.sort_unstable();
+    assert_eq!(pairs, [(-6, 2), (-4, 3), (-3, 4), (-2, 6)]);
 }

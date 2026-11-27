@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 redsat-sat.workspace = true
 num-bigint.workspace = true
+num-traits.workspace = true
 
 [dev-dependencies]
 redsat-sat = { workspace = true, features = ["cadical"] }

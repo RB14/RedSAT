@@ -1,11 +1,11 @@
 //! Solving circuit constraints with an incremental SAT solver.
 
-use num_bigint::BigUint;
+use num_bigint::BigInt;
 use redsat_sat::{SolveResult, Solver};
 
 use crate::aig::{Aig, Edge, Simulation};
-use crate::bitvec::BitVec;
 use crate::encoder::CnfEncoder;
+use crate::int::IntVec;
 
 /// An [`Aig`] wired to an incremental [`Solver`]. Build a circuit, require some of its edges,
 /// solve, and read the model back in terms of the circuit.
@@ -63,10 +63,10 @@ impl<S: Solver> CircuitSolver<S> {
         self.model().value(edge)
     }
 
-    /// The value of `bits` in the last model. Panics like [`value`](Self::value).
-    pub fn value_of(&self, bits: &BitVec) -> BigUint {
+    /// The value of `int` in the last model. Panics like [`value`](Self::value).
+    pub fn value_of(&self, int: &IntVec) -> BigInt {
         let model = self.model();
-        bits.evaluate(|edge| model.value(edge))
+        int.evaluate(|edge| model.value(edge))
     }
 
     /// Excludes the last model's combination of values on `edges` from every future solution.
